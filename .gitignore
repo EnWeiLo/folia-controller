@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+/folia-src/
+/out/
+# Folia's web build is fetched and copied in by CI.
+app/src/main/assets/folia/
