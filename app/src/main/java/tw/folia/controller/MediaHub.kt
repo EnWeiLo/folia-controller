@@ -80,11 +80,21 @@ object MediaHub {
         onSessionsChanged(list ?: emptyList())
     }
 
-    // Re-anchors Folia's clock every few seconds so it never drifts from the real player.
+    // Folia runs its own clock from the last progress we sent. Every couple of seconds compare
+    // where that clock should be with where the player really is, and re-anchor only on real drift:
+    // each re-anchor is a tiny jump, so doing it on a timer showed up as a periodic hitch.
+    private const val DRIFT_THRESHOLD_MS = 120L
+    private var lastSentClockMs = 0L
+    private var lastSentAtMs = 0L
+    private var lastSentPlaying = false
+
     private val resync = object : Runnable {
         override fun run() {
-            if (isPlaying()) pushProgress()
-            main.postDelayed(this, 4000)
+            if (isPlaying()) {
+                val folia = lastSentClockMs + if (lastSentPlaying) SystemClock.elapsedRealtime() - lastSentAtMs else 0L
+                if (kotlin.math.abs(lyricClockMs() - folia) > DRIFT_THRESHOLD_MS) pushProgress()
+            }
+            main.postDelayed(this, 2000)
         }
     }
 
@@ -113,7 +123,7 @@ object MediaHub {
             started = true
             onSessionsChanged(msm.getActiveSessions(listenerComponent()))
             main.removeCallbacks(resync)
-            main.postDelayed(resync, 4000)
+            main.postDelayed(resync, 2000)
         } catch (e: SecurityException) {
             started = false
         }
@@ -429,7 +439,11 @@ object MediaHub {
     }
 
     private fun pushProgress() {
-        push("PlayerProgress", JSONObject().put("progress", lyricClockMs()))
+        val clock = lyricClockMs()
+        lastSentClockMs = clock
+        lastSentAtMs = SystemClock.elapsedRealtime()
+        lastSentPlaying = isPlaying()
+        push("PlayerProgress", JSONObject().put("progress", clock))
     }
 
     private fun notifyUi() {

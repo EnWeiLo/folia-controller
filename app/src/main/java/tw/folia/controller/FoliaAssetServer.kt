@@ -8,15 +8,30 @@ import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.util.Locale
 
+/** Per-load page options decided on the Android side. */
+data class PageSettings(
+    /** Fraction of physical pixels the page lays out and renders canvases at (1 = native). */
+    val renderScale: Float,
+    /** Folia's own rAF cap: "off", "60", "90" or "120". */
+    val frameCap: String,
+    val showFps: Boolean,
+    val displayHz: Float,
+)
+
 /**
  * Serves Folia's web build (bundled under assets/folia/) at https://appassets.androidplatform.net/
  * so the page runs exactly like the hosted web version, with two changes to index.html:
  *  - folia-bridge.js is injected before any other script (replaces the Now Playing WebSocket);
- *  - the viewport makes 1 CSS px = 1 physical pixel, so Folia's OBS layout (built for a
- *    1080 / 1920 px wide canvas) renders sharp instead of being upscaled from ~400 px.
+ *  - the viewport makes 1 CSS px = 1 physical pixel × renderScale, so Folia's OBS layout (built for
+ *    a 1080 / 1920 px wide canvas) renders sharp instead of being upscaled from ~400 px. Below 1,
+ *    every canvas renders fewer pixels and is scaled up (the quality / smoothness trade-off);
+ *  - Folia's frame-rate cap is written to localStorage before Folia reads it at startup.
  * Service-worker scripts get a 404: a cached SW would serve stale bundles after an update.
  */
-class FoliaAssetServer(private val context: Context) {
+class FoliaAssetServer(
+    private val context: Context,
+    private val pageSettings: () -> PageSettings,
+) {
     companion object {
         const val HOST = "appassets.androidplatform.net"
         const val ORIGIN = "https://$HOST"
@@ -25,6 +40,9 @@ class FoliaAssetServer(private val context: Context) {
 
     private val bridgeScript: String by lazy {
         context.assets.open("folia-bridge.js").bufferedReader().use { it.readText() }
+    }
+    private val fpsScript: String by lazy {
+        context.assets.open("folia-fps.js").bufferedReader().use { it.readText() }
     }
 
     fun intercept(request: WebResourceRequest): WebResourceResponse? = intercept(request.url)
@@ -59,14 +77,21 @@ class FoliaAssetServer(private val context: Context) {
             )
         }
 
+        val settings = pageSettings()
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
-        val scale = String.format(Locale.US, "%.4f", 1f / density)
+        val renderScale = settings.renderScale.coerceIn(0.4f, 1f)
+        val scale = String.format(Locale.US, "%.4f", 1f / (density * renderScale))
         val viewport = "<meta name=\"viewport\" content=\"initial-scale=$scale, minimum-scale=$scale, " +
             "maximum-scale=$scale, user-scalable=no, viewport-fit=cover\" />"
 
         var out = Regex("""<meta\s+name=["']viewport["'][^>]*>""", RegexOption.IGNORE_CASE).replace(html, "")
         val headTag = Regex("""<head[^>]*>""", RegexOption.IGNORE_CASE).find(out)
-        val injection = "$viewport<script>$bridgeScript</script>"
+        val config = "window.__FOLIA_ANDROID_CONFIG__={frameCap:'${settings.frameCap}',showFps:${settings.showFps}," +
+            "cssPerDp:${String.format(Locale.US, "%.3f", density * renderScale)}," +
+            "displayHz:${String.format(Locale.US, "%.1f", settings.displayHz)}};" +
+            "try{localStorage.setItem('visualizer_frame_rate','${settings.frameCap}')}catch(e){}"
+        val fps = if (settings.showFps) "<script>$fpsScript</script>" else ""
+        val injection = "$viewport<script>$config</script><script>$bridgeScript</script>$fps"
         out = if (headTag != null) {
             out.substring(0, headTag.range.last + 1) + injection + out.substring(headTag.range.last + 1)
         } else {

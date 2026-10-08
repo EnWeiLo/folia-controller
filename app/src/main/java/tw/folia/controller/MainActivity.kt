@@ -9,6 +9,7 @@ import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +18,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
 import android.util.TypedValue
+import android.view.Display
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -37,10 +39,15 @@ import android.widget.SeekBar
 import android.widget.TextView
 import org.json.JSONObject
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class MainActivity : Activity() {
 
     private data class Mode(val id: String, val label: String)
+
+    /** [renderScale]: share of physical pixels Folia renders at; [staticMode]: Folia's 靜態模式 (no geometric background). */
+    private data class Quality(val id: String, val label: String, val detail: String, val renderScale: Float, val staticMode: Boolean)
 
     companion object {
         // Folia's builtin lyric animations (src/types/visualizerModes.ts), with their Chinese names.
@@ -51,6 +58,12 @@ class MainActivity : Activity() {
             Mode("pendolo", "時計"), Mode("sonnet", "商籟"), Mode("tempera", "凝彩"),
             Mode("lumiere", "繪光"), Mode("still", "靜止"),
         )
+        private val QUALITIES = listOf(
+            Quality("high", "高畫質", "原生解析度，最清晰也最吃效能", 1f, false),
+            Quality("balanced", "均衡", "約 75% 解析度，文字依然清晰", 0.75f, false),
+            Quality("smooth", "流暢", "約 60% 解析度，並關閉幾何背景", 0.6f, true),
+        )
+        private const val DEFAULT_QUALITY = "balanced"
         private val OFFSETS = longArrayOf(-1000, -500, -250, 0, 250, 500, 750, 1000, 1500)
         private const val AUTO_HIDE_MS = 4000L
     }
@@ -76,15 +89,25 @@ class MainActivity : Activity() {
     private val autoHide = Runnable { setControlsVisible(false) }
     private val progressTicker = object : Runnable {
         override fun run() {
-            updateProgressUi()
+            if (controlsVisible) updateProgressUi()
             handler.postDelayed(this, 500)
+        }
+    }
+
+    // Tells the FPS readout when the screen actually switches refresh rate.
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {}
+        override fun onDisplayRemoved(displayId: Int) {}
+        override fun onDisplayChanged(displayId: Int) {
+            val hz = currentDisplay()?.refreshRate ?: return
+            webView.evaluateJavascript("window.__foliaSetDisplayHz&&window.__foliaSetDisplayHz($hz)", null)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("folia_controller", MODE_PRIVATE)
-        assetServer = FoliaAssetServer(this)
+        assetServer = FoliaAssetServer(this) { currentPageSettings() }
         MediaHub.init(this)
         applyHubPrefs()
 
@@ -95,6 +118,7 @@ class MainActivity : Activity() {
             }
         }
         setContentView(buildLayout())
+        applyRefreshRate()
         applyKeepScreenOn()
         enterImmersive()
 
@@ -109,6 +133,8 @@ class MainActivity : Activity() {
         super.onResume()
         resumed = true
         webView.onResume()
+        applyRefreshRate()
+        (getSystemService(DISPLAY_SERVICE) as DisplayManager).registerDisplayListener(displayListener, handler)
         updatePermissionState()
         handler.post(progressTicker)
         showControlsBriefly()
@@ -117,6 +143,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         resumed = false
         handler.removeCallbacks(progressTicker)
+        (getSystemService(DISPLAY_SERVICE) as DisplayManager).unregisterDisplayListener(displayListener)
         webView.onPause()
         super.onPause()
     }
@@ -354,6 +381,7 @@ class MainActivity : Activity() {
             append(FoliaAssetServer.ORIGIN).append("/?obs=1&obsSource=now-playing&host=android-bridge")
             append("&visualizer=").append(Uri.encode(mode))
             if (prefs.getBoolean("daylight", false)) append("&daylight=1")
+            if (currentQuality().staticMode) append("&cfg=").append(Uri.encode("{\"stm\":true}"))
         }
         webView.loadUrl(url)
     }
@@ -460,6 +488,107 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------- quality & refresh rate ----------
+
+    private fun currentQuality(): Quality =
+        QUALITIES.firstOrNull { it.id == prefs.getString("quality", DEFAULT_QUALITY) } ?: QUALITIES[1]
+
+    private fun refreshPref(): String = prefs.getString("refresh", "auto") ?: "auto"
+
+    /** Folia's own frame cap: none when we want the screen's top speed, otherwise the chosen rate. */
+    private fun frameCap(): String = when (val pref = refreshPref()) {
+        "auto" -> "off"
+        else -> if ((pref.toIntOrNull() ?: 0) >= (supportedRefreshRates().maxOrNull() ?: 60)) "off" else pref
+    }
+
+    private fun currentPageSettings() = PageSettings(
+        renderScale = currentQuality().renderScale,
+        frameCap = frameCap(),
+        showFps = prefs.getBoolean("show_fps", false),
+        displayHz = currentDisplay()?.refreshRate ?: 60f,
+    )
+
+    @Suppress("DEPRECATION")
+    private fun currentDisplay(): Display? =
+        if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay
+
+    /** Display modes at the current resolution: only the refresh rate differs between them. */
+    private fun sameResolutionModes(): List<Display.Mode> {
+        val display = currentDisplay() ?: return emptyList()
+        val current = display.mode
+        return display.supportedModes.filter {
+            it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight
+        }
+    }
+
+    private fun supportedRefreshRates(): List<Int> =
+        sameResolutionModes().map { it.refreshRate.roundToInt() }.distinct().sortedDescending()
+
+    /**
+     * Asks Android for a display mode. WebView animations run at whatever rate the window gets,
+     * so this is what lets Folia draw at 120 fps. The system (and vendor policies such as HyperOS's
+     * per-app refresh rules) still has the final say.
+     */
+    private fun applyRefreshRate() {
+        val modes = sameResolutionModes()
+        if (modes.isEmpty()) return
+        val pref = refreshPref()
+        val target = if (pref == "auto") {
+            modes.maxByOrNull { it.refreshRate }
+        } else {
+            val hz = pref.toFloatOrNull() ?: 60f
+            modes.filter { it.refreshRate <= hz + 1f }.maxByOrNull { it.refreshRate }
+                ?: modes.minByOrNull { abs(it.refreshRate - hz) }
+        }
+        window.attributes = window.attributes.apply {
+            preferredDisplayModeId = target?.modeId ?: 0
+            preferredRefreshRate = target?.refreshRate ?: 0f
+        }
+    }
+
+    private fun refreshLabel(): String {
+        val now = currentDisplay()?.refreshRate?.roundToInt()
+        val chosen = when (val pref = refreshPref()) {
+            "auto" -> "自動"
+            else -> "$pref Hz"
+        }
+        return if (now != null) "$chosen（目前 $now Hz）" else chosen
+    }
+
+    private fun pickQuality() {
+        val current = QUALITIES.indexOf(currentQuality()).coerceAtLeast(0)
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("畫質")
+            .setSingleChoiceItems(QUALITIES.map { "${it.label}：${it.detail}" }.toTypedArray(), current) { dialog, which ->
+                prefs.edit().putString("quality", QUALITIES[which].id).apply()
+                dialog.dismiss()
+                loadFolia()
+            }
+            .setOnDismissListener { enterImmersive() }
+            .show()
+    }
+
+    private fun pickRefreshRate() {
+        val rates = supportedRefreshRates()
+        val values = listOf("auto") + rates.map { it.toString() }
+        val labels = listOf("自動（螢幕最高 ${rates.maxOrNull() ?: 60} Hz）") + rates.map { "$it Hz" }
+        val current = values.indexOf(refreshPref()).coerceAtLeast(0)
+        val builder = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("刷新率")
+            .setSingleChoiceItems(labels.toTypedArray(), current) { dialog, which ->
+                prefs.edit().putString("refresh", values[which]).apply()
+                dialog.dismiss()
+                applyRefreshRate()
+                loadFolia()
+            }
+            .setOnDismissListener { enterImmersive() }
+        if (rates.size <= 1) {
+            builder.setMessage("這個螢幕只回報一種刷新率（${rates.firstOrNull() ?: 60} Hz），系統可能限制了這個 App。可到系統「顯示」設定把更新率調成最高或自訂後再試。")
+                .setPositiveButton("知道了", null)
+        }
+        builder.show()
+    }
+
     private fun onOff(key: String, default: Boolean) = if (prefs.getBoolean(key, default)) "開" else "關"
 
     private fun showSettings() {
@@ -469,6 +598,9 @@ class MainActivity : Activity() {
         val offset = prefs.getLong("offset", 0L)
         val items = arrayOf(
             "歌詞動畫：$modeLabel",
+            "畫質：${currentQuality().label}",
+            "刷新率：${refreshLabel()}",
+            "顯示 FPS：${onOff("show_fps", false)}",
             "日間主題：${onOff("daylight", false)}",
             "顯示翻譯：${onOff("translation", true)}",
             "簡體歌詞轉繁體：${onOff("traditional", true)}",
@@ -481,12 +613,15 @@ class MainActivity : Activity() {
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> pickMode()
-                    1 -> { toggle("daylight", false); loadFolia(); showSettings() }
-                    2 -> { toggle("translation", true); applyHubPrefs(); showSettings() }
-                    3 -> { toggle("traditional", true); applyHubPrefs(); showSettings() }
-                    4 -> pickOffset()
-                    5 -> { toggle("keep_screen_on", true); applyKeepScreenOn(); showSettings() }
-                    6 -> loadFolia()
+                    1 -> pickQuality()
+                    2 -> pickRefreshRate()
+                    3 -> { toggle("show_fps", false); loadFolia(); showSettings() }
+                    4 -> { toggle("daylight", false); loadFolia(); showSettings() }
+                    5 -> { toggle("translation", true); applyHubPrefs(); showSettings() }
+                    6 -> { toggle("traditional", true); applyHubPrefs(); showSettings() }
+                    7 -> pickOffset()
+                    8 -> { toggle("keep_screen_on", true); applyKeepScreenOn(); showSettings() }
+                    9 -> loadFolia()
                 }
             }
             .setOnDismissListener { enterImmersive(); scheduleAutoHide() }
