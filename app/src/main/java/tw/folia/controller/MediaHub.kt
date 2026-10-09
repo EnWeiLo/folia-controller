@@ -404,7 +404,9 @@ object MediaHub {
             push("Lyric", data)
             return
         }
-        val convert = convertToTraditional && result.source == "netease"
+        // Any source: LRCLIB also carries Simplified lyrics for Chinese songs. Japanese (has kana)
+        // and lyrics that are already Traditional come through unchanged.
+        val convert = convertToTraditional
         fun text(value: String?): String? = value?.let { if (convert) LyricRepository.toTraditional(it) else it }
 
         data.put("source", result.source)

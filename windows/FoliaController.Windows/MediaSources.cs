@@ -360,6 +360,7 @@ internal sealed class FakeSource : IMediaSource
 
     public Task StartAsync()
     {
+        lock (_gate) _sampledAt = Stopwatch.GetTimestamp();
         _timer = new System.Threading.Timer(_ => Emit(), null, 200, 1000);
         return Task.CompletedTask;
     }

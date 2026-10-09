@@ -320,7 +320,9 @@ internal sealed class MediaHub
             data["hasLyric"] = false;
             return Envelope("Lyric", data);
         }
-        var convert = _settings.Traditional && result.Source == "netease";
+        // Any source: LRCLIB also carries Simplified lyrics for Chinese songs. Japanese (has kana)
+        // and lyrics that are already Traditional come through unchanged.
+        var convert = _settings.Traditional;
         string? Text(string? value) => value == null ? null : convert ? ChineseConverter.ToTraditional(value) : value;
 
         data["source"] = result.Source;

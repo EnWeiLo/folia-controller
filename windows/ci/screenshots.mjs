@@ -7,18 +7,28 @@ import fs from 'node:fs';
 const port = Number(process.argv[2] || 39999);
 const outDir = process.argv[3] || 'screenshots';
 fs.mkdirSync(outDir, { recursive: true });
-const browser = await chromium.launch({ channel: 'chrome' });
+// Build servers have no GPU: software WebGL, or screenshots wait forever for a frame.
+const browser = await chromium.launch({
+  channel: 'chrome',
+  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+});
 const errors = [];
 
 async function shoot(name, options, actions) {
   const context = await browser.newContext(options);
-  const page = await context.newPage();
-  page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
-  await page.goto(`http://127.0.0.1:${port}/`);
-  await page.waitForTimeout(9000);
-  await actions(page);
-  await page.screenshot({ path: `${outDir}/${name}.png` });
-  await context.close();
+  try {
+    const page = await context.newPage();
+    page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
+    await page.goto(`http://127.0.0.1:${port}/`);
+    await page.waitForTimeout(9000);
+    await actions(page);
+    await page.screenshot({ path: `${outDir}/${name}.png`, timeout: 60000 });
+    console.log(`saved ${name}.png`);
+  } catch (e) {
+    errors.push(`${name}: screenshot failed: ${e.message.split('\n')[0]}`);
+  } finally {
+    await context.close();
+  }
 }
 
 await shoot('desktop', { viewport: { width: 1600, height: 900 } }, async (page) => {
