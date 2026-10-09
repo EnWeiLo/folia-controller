@@ -42,6 +42,13 @@ internal static class SmokeTest
                 {
                     report.Append($"    {source}: no results\n");
                 }
+                foreach (var (source, amll) in new[] { ("netease", "amll-ncm"), ("qq", "amll-qq") })
+                {
+                    var c = candidates.FirstOrDefault(x => x.Source == source && x.Accepted);
+                    if (c == null) continue;
+                    var amllDoc = await LyricRepository.FetchAsync(c with { Source = amll }, cts.Token);
+                    report.Append($"    {amll} ({c.Id}): {(amllDoc == null ? "none" : $"lines={amllDoc.Lines.Count} wordByWord={amllDoc.WordByWord} translation={amllDoc.Translation.Count}")}\n");
+                }
                 var qq = candidates.FirstOrDefault(c => c.Source == "qq" && c.Accepted);
                 if (qq != null)
                 {

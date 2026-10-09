@@ -86,6 +86,9 @@ object LyricRepository {
     private val KANA = Regex("""[぀-ヿ]""")
     private val CJK = Regex("""[぀-ヿ㐀-鿿가-힯]""")
     private val PURE_MUSIC = Regex("""纯音乐|純音樂|此歌曲为没有填词的纯音乐""")
+    // Other versions of a song; matched on lower-cased titles (Latin words must stand alone).
+    private val VERSION_LATIN = Regex("""(?<![a-z])(live|remix|mix|acoustic|instrumental|inst|karaoke|off vocal|cover|demo|ver|version|sped up|slowed)(?![a-z])""")
+    private val VERSION_CJK = Regex("""伴奏|纯音乐|純音樂|现场|現場|翻唱|カラオケ|ライブ""")
 
     private val pool = Executors.newFixedThreadPool(6)
 
@@ -202,6 +205,10 @@ object LyricRepository {
         val diff = if (query.durationMs > 0 && durationMs > 0) abs(durationMs - query.durationMs) else null
         if (diff != null && diff > 15_000) return null
         var score = titleScore + (if (artistMatch) 3 else 0)
+        // Same title before cleaning: the studio track beats "Title (Live …)".
+        if (titleScore == 4 && norm(title) == norm(query.title)) score += 1
+        // A live / remix / karaoke … version the player is not playing.
+        if ((versionTags(title) - versionTags(query.title)).isNotEmpty()) score -= 2
         if (diff != null) score += when {
             diff <= 2500 -> 3
             diff <= 5000 -> 1
@@ -221,21 +228,34 @@ object LyricRepository {
         return LyricCandidate(source, id, title, artists.joinToString(" / "), album, durationMs, extra, score, accepted)
     }
 
-    /** Search text for Chinese catalogs: Simplified, unless it is Japanese (kanji must stay as they are). */
-    private fun catalogQuery(text: String): String = if (KANA.containsMatchIn(text)) text else toSimplified(text)
-
-    /** Queries to try: "title artist", then — for Latin titles — the artist alone (romanised titles). */
-    private fun searchTerms(query: SongQuery): List<String> {
-        val title = cleanTitle(query.title)
-        val artist = primaryArtist(query.artist)
-        val terms = mutableListOf(catalogQuery("$title $artist".trim()))
-        if (artist.isNotEmpty() && !CJK.containsMatchIn(title)) terms.add(catalogQuery(artist))
-        return terms
+    private fun versionTags(title: String): Set<String> {
+        val lower = title.lowercase()
+        return (VERSION_LATIN.findAll(lower).map { it.value } + VERSION_CJK.findAll(lower).map { it.value }).toSet()
     }
 
-    private fun searchUntilAccepted(query: SongQuery, search: (String) -> List<LyricCandidate>): List<LyricCandidate> {
+    /**
+     * Queries to try, in order: the text as the player shows it; the Simplified spelling (Chinese
+     * catalogs) when that differs — never first, since Japanese names in kanji only (米津玄師) must
+     * stay as they are; then, for Latin titles, the artist alone (romanised titles).
+     */
+    private fun searchTerms(query: SongQuery, format: (String, String) -> String = { t, a -> "$t $a".trim() }): List<String> {
+        val title = cleanTitle(query.title)
+        val artist = primaryArtist(query.artist)
+        val terms = LinkedHashSet<String>()
+        val original = format(title, artist)
+        terms.add(original)
+        if (!KANA.containsMatchIn(original)) terms.add(toSimplified(original))
+        if (artist.isNotEmpty() && !CJK.containsMatchIn(title)) terms.add(artist)
+        return terms.toList()
+    }
+
+    private fun searchUntilAccepted(
+        query: SongQuery,
+        terms: List<String> = searchTerms(query),
+        search: (String) -> List<LyricCandidate>,
+    ): List<LyricCandidate> {
         val all = ArrayList<LyricCandidate>()
-        for (term in searchTerms(query)) {
+        for (term in terms) {
             val found = runCatching { search(term) }.getOrDefault(emptyList())
             all.addAll(found.filter { c -> all.none { it.id == c.id } })
             if (found.any { it.accepted }) break
@@ -351,7 +371,11 @@ object LyricRepository {
     private fun searchKugou(query: SongQuery): List<LyricCandidate> {
         val title = cleanTitle(query.title)
         val artist = primaryArtist(query.artist)
-        val keyword = catalogQuery(if (artist.isNotEmpty()) "$artist - $title" else title)
+        val terms = searchTerms(query) { t, a -> if (a.isNotEmpty()) "$a - $t" else t }.filter { it.contains(title) || it.contains(toSimplified(title)) }
+        return searchUntilAccepted(query, terms) { keyword -> searchKugouOnce(query, keyword, title, artist) }
+    }
+
+    private fun searchKugouOnce(query: SongQuery, keyword: String, title: String, artist: String): List<LyricCandidate> {
         val o = kugouSigned("https://lyrics.kugou.com/v1/search", mapOf(
             "album_audio_id" to "", "duration" to query.durationMs.toString(), "hash" to "",
             "keyword" to keyword, "lrctxt" to "1", "man" to "no",

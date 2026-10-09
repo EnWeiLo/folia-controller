@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
+using System.Text.Encodings.Web;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -99,6 +101,11 @@ internal static class LyricRepository
     private static readonly Regex Kana = new(@"[぀-ヿ]", RegexOptions.Compiled);
     private static readonly Regex Cjk = new(@"[぀-ヿ㐀-鿿가-힯]", RegexOptions.Compiled);
     private static readonly Regex PureMusic = new("纯音乐|純音樂|此歌曲为没有填词的纯音乐", RegexOptions.Compiled);
+    // Other versions of a song; matched on lower-cased titles (Latin words must stand alone).
+    private static readonly Regex VersionLatin = new("(?<![a-z])(live|remix|mix|acoustic|instrumental|inst|karaoke|off vocal|cover|demo|ver|version|sped up|slowed)(?![a-z])", RegexOptions.Compiled);
+    private static readonly Regex VersionCjk = new("伴奏|纯音乐|純音樂|现场|現場|翻唱|カラオケ|ライブ", RegexOptions.Compiled);
+    // QQ's server wants the request JSON with the text itself, not \u escapes.
+    private static readonly System.Text.Json.JsonSerializerOptions RawJson = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private static readonly object CacheGate = new();
     private static readonly Dictionary<string, (LyricResult? Result, List<LyricCandidate> Candidates)> Cache = new();
@@ -248,6 +255,10 @@ internal static class LyricRepository
         long? diff = query.DurationMs > 0 && durationMs > 0 ? Math.Abs(durationMs - query.DurationMs) : null;
         if (diff > 15_000) return null;
         var score = titleScore + (artistMatch ? 3 : 0);
+        // Same title before cleaning: the studio track beats "Title (Live …)".
+        if (titleScore == 4 && Norm(title) == Norm(query.Title)) score += 1;
+        // A live / remix / karaoke … version the player is not playing.
+        if (VersionTags(title).Except(VersionTags(query.Title)).Any()) score -= 2;
         if (diff != null)
         {
             score += diff <= 2500 ? 3 : diff <= 5000 ? 1 : diff > 8000 ? -3 : 0;
@@ -266,23 +277,39 @@ internal static class LyricRepository
             extra ?? new Dictionary<string, string>(), scored.Value.Score, scored.Value.Accepted);
     }
 
-    /// <summary>Search text for Chinese catalogs: Simplified, unless it is Japanese (kanji must stay as they are).</summary>
-    private static string CatalogQuery(string text) => Kana.IsMatch(text) ? text : ChineseConverter.ToSimplified(text);
-
-    /// <summary>Queries to try: "title artist", then — for Latin titles — the artist alone (romanised titles).</summary>
-    private static List<string> SearchTerms(SongQuery query)
+    private static HashSet<string> VersionTags(string title)
     {
+        var lower = title.ToLowerInvariant();
+        return VersionLatin.Matches(lower).Select(m => m.Value).Concat(VersionCjk.Matches(lower).Select(m => m.Value)).ToHashSet();
+    }
+
+    /// <summary>
+    /// Queries to try, in order: the text as the player shows it; the Simplified spelling (Chinese
+    /// catalogs) when that differs — never first, since Japanese names in kanji only (米津玄師) must
+    /// stay as they are; then, for Latin titles, the artist alone (romanised titles).
+    /// </summary>
+    private static List<string> SearchTerms(SongQuery query, Func<string, string, string>? format = null)
+    {
+        format ??= (t, a) => $"{t} {a}".Trim();
         var title = CleanTitle(query.Title);
         var artist = PrimaryArtist(query.Artist);
-        var terms = new List<string> { CatalogQuery($"{title} {artist}".Trim()) };
-        if (artist.Length > 0 && !Cjk.IsMatch(title)) terms.Add(CatalogQuery(artist));
+        var terms = new List<string>();
+        void Add(string term)
+        {
+            if (!terms.Contains(term)) terms.Add(term);
+        }
+        var original = format(title, artist);
+        Add(original);
+        if (!Kana.IsMatch(original)) Add(ChineseConverter.ToSimplified(original));
+        if (artist.Length > 0 && !Cjk.IsMatch(title)) Add(artist);
         return terms;
     }
 
-    private static async Task<List<LyricCandidate>> SearchUntilAcceptedAsync(SongQuery query, Func<string, Task<List<LyricCandidate>>> search)
+    private static async Task<List<LyricCandidate>> SearchUntilAcceptedAsync(SongQuery query, Func<string, Task<List<LyricCandidate>>> search,
+        List<string>? terms = null)
     {
         var all = new List<LyricCandidate>();
-        foreach (var term in SearchTerms(query))
+        foreach (var term in terms ?? SearchTerms(query))
         {
             List<LyricCandidate> found;
             try { found = await search(term); } catch (OperationCanceledException) { throw; } catch (Exception) { found = new(); }
@@ -352,7 +379,7 @@ internal static class LyricRepository
             },
             ["request"] = new JsonObject { ["method"] = method, ["module"] = module, ["param"] = param },
         };
-        var body = await PostJsonAsync("https://u.y.qq.com/cgi-bin/musicu.fcg", payload.ToJsonString(), QqHeaders, ct);
+        var body = await PostJsonAsync("https://u.y.qq.com/cgi-bin/musicu.fcg", payload.ToJsonString(RawJson), QqHeaders, ct);
         if (Parse(body) is not JsonObject o || Num(o["code"], -1) != 0) return null;
         var request = o["request"] as JsonObject;
         return request != null && Num(request["code"], -1) == 0 ? request["data"] as JsonObject : null;
@@ -435,11 +462,17 @@ internal static class LyricRepository
         return error is 0 or 200 ? o : null;
     }
 
-    private static async Task<List<LyricCandidate>> SearchKugouAsync(SongQuery query, CancellationToken ct)
+    private static Task<List<LyricCandidate>> SearchKugouAsync(SongQuery query, CancellationToken ct)
     {
         var title = CleanTitle(query.Title);
         var artist = PrimaryArtist(query.Artist);
-        var keyword = CatalogQuery(artist.Length > 0 ? $"{artist} - {title}" : title);
+        var simplifiedTitle = ChineseConverter.ToSimplified(title);
+        var terms = SearchTerms(query, (t, a) => a.Length > 0 ? $"{a} - {t}" : t).Where(k => k.Contains(title) || k.Contains(simplifiedTitle)).ToList();
+        return SearchUntilAcceptedAsync(query, keyword => SearchKugouOnceAsync(query, keyword, title, artist, ct), terms);
+    }
+
+    private static async Task<List<LyricCandidate>> SearchKugouOnceAsync(SongQuery query, string keyword, string title, string artist, CancellationToken ct)
+    {
         var o = await KugouSignedAsync("https://lyrics.kugou.com/v1/search", new Dictionary<string, string>
         {
             ["album_audio_id"] = "", ["duration"] = query.DurationMs.ToString(), ["hash"] = "",
@@ -612,7 +645,9 @@ internal static class LyricRepository
 
     private static async Task<string?> PostJsonAsync(string url, string json, (string, string)[] headers, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        var content = new StringContent(json, Encoding.UTF8);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json"); // no "; charset=…", like the Android app
+        using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
         return await SendAsync(request, headers, ct);
     }
 

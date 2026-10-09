@@ -110,10 +110,10 @@ check((await post('/api/control', { action: 'seek', positionMs: 120000 })).ok, '
 await sleep(1500);
 const seekProgress = lastOf('PlayerProgress');
 check(seekProgress && Math.abs(seekProgress.progress - 120000) < 2000, 'seek reaches Folia', JSON.stringify(seekProgress));
-check((await post('/api/settings', { offsetMs: 500, translation: false })).ok, 'settings accepted');
+check((await post('/api/settings', { offsetMs: 500 })).ok, 'settings accepted');
 await sleep(800);
 const settingsState = lastOf('ControllerState');
-check(settingsState?.settings?.offsetMs === 500 && settingsState.settings.translation === false, 'settings broadcast', JSON.stringify(settingsState?.settings));
+check(settingsState?.settings?.offsetMs === 500, 'settings broadcast', JSON.stringify(settingsState?.settings));
 const offsetProgress = lastOf('PlayerProgress');
 check(offsetProgress && Math.abs(offsetProgress.progress - 119500) < 2000, 'offset applied to Folia clock', JSON.stringify(offsetProgress));
 

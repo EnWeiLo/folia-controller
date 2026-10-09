@@ -38,6 +38,11 @@ class LiveLyricsTest {
                 for (source in listOf("netease", "qq", "kugou", "lrclib").filter { s -> candidates.none { it.source == s } }) {
                     report.append("    $source: no results\n")
                 }
+                for ((source, amll) in listOf("netease" to "amll-ncm", "qq" to "amll-qq")) {
+                    val c = candidates.firstOrNull { it.source == source && it.accepted } ?: continue
+                    val doc = LyricRepository.fetch(c.copy(source = amll))
+                    report.append("    $amll (${c.id}): " + (doc?.let { "lines=${it.lines.size} wordByWord=${it.wordByWord} translation=${it.translation.size}" } ?: "none") + "\n")
+                }
                 for (source in listOf("qq", "kugou")) {
                     val c = candidates.firstOrNull { it.source == source && it.accepted } ?: continue
                     val doc = LyricRepository.fetch(c)
