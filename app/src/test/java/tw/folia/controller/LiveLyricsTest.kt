@@ -16,6 +16,8 @@ class LiveLyricsTest {
         SongQuery("Yoru ni Kakeru", "YOASOBI", "", 261_000),
         SongQuery("Lemon", "米津玄師", "", 276_000),
         SongQuery("Blinding Lights", "The Weeknd", "After Hours", 200_040),
+        // As Spotify on Android reports it: the AMLL database by Spotify track id.
+        SongQuery("Blinding Lights", "The Weeknd", "After Hours", 200_040, spotifyId = "0VjIjW4GlUZAMYd2vXMi3b"),
     )
 
     @Test
@@ -25,7 +27,7 @@ class LiveLyricsTest {
         for (song in songs) {
             try {
                 val (result, candidates) = LyricRepository.find(song)
-                report.append("${song.title} / ${song.artist}: ")
+                report.append("${song.title} / ${song.artist}" + (song.spotifyId?.let { " (spotify $it)" } ?: "") + ": ")
                 report.append(
                     if (result == null) "NONE"
                     else "${result.sourceLabel} [${result.candidate.title} / ${result.candidate.artist}] lines=${result.doc.lines.size} " +

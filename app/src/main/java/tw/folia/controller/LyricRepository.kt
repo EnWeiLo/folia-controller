@@ -17,7 +17,14 @@ import kotlin.math.abs
 import kotlin.math.min
 
 /** What the player says is playing. */
-data class SongQuery(val title: String, val artist: String, val album: String, val durationMs: Long)
+data class SongQuery(
+    val title: String,
+    val artist: String,
+    val album: String,
+    val durationMs: Long,
+    /** Spotify's track id when Spotify is the player (it publishes `spotify:track:<id>`). */
+    val spotifyId: String? = null,
+)
 
 /** A song found on one lyric source. [extra] holds what that source needs to fetch it again. */
 data class LyricCandidate(
@@ -101,7 +108,7 @@ object LyricRepository {
         "qq" -> "QQ 音樂"
         "kugou" -> "酷狗"
         "lrclib" -> "LRCLIB"
-        "amll-ncm", "amll-qq" -> "AMLL"
+        "amll-ncm", "amll-qq", "amll-spotify" -> "AMLL"
         "local" -> "本機檔案"
         else -> source
     }
@@ -114,9 +121,14 @@ object LyricRepository {
         val key = "${query.title}|${query.artist}|${query.durationMs / 1000}"
         synchronized(cache) { cache[key]?.let { return it } }
 
+        // Spotify tells us exactly which track it is: the AMLL database is indexed by that id.
+        val spotify = query.spotifyId?.let { id ->
+            val c = LyricCandidate("amll-spotify", id, query.title, query.artist, query.album, query.durationMs, emptyMap(), 20, true)
+            runCatching { fetch(c) }.getOrNull()?.let { LyricResult(it, c) }
+        }
         val candidates = searchAll(query)
         val accepted = candidates.filter { it.accepted }
-        val result = pickBest(query, accepted)
+        val result = spotify ?: pickBest(query, accepted)
         val outcome = result to candidates
         if (result != null || candidates.isNotEmpty()) synchronized(cache) { cache[key] = outcome }
         return outcome
@@ -181,6 +193,7 @@ object LyricRepository {
         "lrclib" -> c.extra["synced"]?.let { LyricFormats.parseLrc(it) } ?: fetchLrclib(c.id)
         "amll-ncm" -> fetchAmll("ncm", c.id)
         "amll-qq" -> fetchAmll("qq", c.id)
+        "amll-spotify" -> fetchAmll("spotify", c.id)
         "local" -> LocalLyrics.load(c.id)
         else -> null
     }?.takeUnless { doc -> doc.isEmpty || doc.lines.all { PURE_MUSIC.containsMatchIn(it.text) } }

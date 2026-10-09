@@ -80,6 +80,9 @@ internal static class LyricRepository
 
     private static readonly HttpClient Http = new(new SocketsHttpHandler
     {
+        // Our own Cookie headers (QQ's tmeLoginType, NetEase's os=pc) are dropped when the
+        // handler manages cookies itself.
+        UseCookies = false,
         AutomaticDecompression = DecompressionMethods.All,
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
     })
@@ -117,7 +120,7 @@ internal static class LyricRepository
         "qq" => "QQ 音樂",
         "kugou" => "酷狗",
         "lrclib" => "LRCLIB",
-        "amll-ncm" or "amll-qq" => "AMLL",
+        "amll-ncm" or "amll-qq" or "amll-spotify" => "AMLL",
         "local" => "本機檔案",
         _ => source,
     };
@@ -228,6 +231,7 @@ internal static class LyricRepository
             "lrclib" => c.Extra.TryGetValue("synced", out var synced) ? LyricFormats.ParseLrc(synced) : await FetchLrclibAsync(c.Id, ct),
             "amll-ncm" => await FetchAmllAsync("ncm", c.Id, ct),
             "amll-qq" => await FetchAmllAsync("qq", c.Id, ct),
+            "amll-spotify" => await FetchAmllAsync("spotify", c.Id, ct),
             "local" => LocalLyrics.Load(c.Id),
             _ => null,
         };

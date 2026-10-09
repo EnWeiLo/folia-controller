@@ -20,6 +20,8 @@ import java.util.concurrent.Executors
 
 data class TrackInfo(
     val key: String,
+    /** Spotify track id, from the player's `spotify:track:<id>` media id. */
+    val spotifyId: String? = null,
     val title: String,
     val artist: String,
     val album: String,
@@ -240,7 +242,9 @@ object MediaHub {
             ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
 
         val previous = track
-        val next = TrackInfo("${controller.packageName}|$title|$artist", title, artist, album, duration, controller.packageName)
+        val spotifyId = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
+            ?.let { Regex("""spotify:track:([A-Za-z0-9]{22})""").find(it)?.groupValues?.get(1) }
+        val next = TrackInfo("${controller.packageName}|$title|$artist", spotifyId, title, artist, album, duration, controller.packageName)
         val songChanged = previous?.key != next.key
         track = next
 
@@ -310,7 +314,7 @@ object MediaHub {
         lyricStatus = "正在搜尋歌詞…"
         lyricExecutor.execute {
             if (requestId != lyricRequestId) return@execute // skipped past this song already
-            val query = SongQuery(info.title, info.artist, info.album, info.durationMs)
+            val query = SongQuery(info.title, info.artist, info.album, info.durationMs, info.spotifyId)
             var result: LyricResult? = null
             var candidates: List<LyricCandidate>? = null
             // A lyric the user picked by hand for this song wins.
