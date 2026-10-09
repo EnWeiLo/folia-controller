@@ -385,8 +385,8 @@ internal static class LyricRepository
         };
         var body = await PostJsonAsync("https://u.y.qq.com/cgi-bin/musicu.fcg", payload.ToJsonString(RawJson), QqHeaders, ct);
         if (Parse(body) is not JsonObject o || Num(o["code"], -1) != 0) return null;
-        var request = o["request"] as JsonObject;
-        return request != null && Num(request["code"], -1) == 0 ? request["data"] as JsonObject : null;
+        // The request code is sometimes 2001 with the full data alongside: the data is what counts.
+        return Get(o["request"], "data") as JsonObject;
     }
 
     private static Task<List<LyricCandidate>> SearchQqAsync(SongQuery query, CancellationToken ct) =>

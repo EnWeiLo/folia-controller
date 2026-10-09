@@ -118,7 +118,7 @@ object LyricRepository {
     /** Best lyrics and every candidate seen (for the manual picker). */
     fun find(query: SongQuery): Pair<LyricResult?, List<LyricCandidate>> {
         if (query.title.isBlank()) return null to emptyList()
-        val key = "${query.title}|${query.artist}|${query.durationMs / 1000}"
+        val key = cacheKey(query)
         synchronized(cache) { cache[key]?.let { return it } }
 
         // Spotify tells us exactly which track it is: the AMLL database is indexed by that id.
@@ -136,8 +136,10 @@ object LyricRepository {
 
     /** Drops the cached search for this song (after the user resets a hand-picked lyric). */
     fun forget(query: SongQuery) {
-        synchronized(cache) { cache.remove("${query.title}|${query.artist}|${query.durationMs / 1000}") }
+        synchronized(cache) { cache.remove(cacheKey(query)) }
     }
+
+    private fun cacheKey(query: SongQuery) = "${query.title}|${query.artist}|${query.durationMs / 1000}|${query.spotifyId.orEmpty()}"
 
     /** Every source, in parallel; scored and sorted best first. */
     fun searchAll(query: SongQuery): List<LyricCandidate> {
@@ -323,8 +325,8 @@ object LyricRepository {
         val body = httpPost("https://u.y.qq.com/cgi-bin/musicu.fcg", payload.toString(), QQ_HEADERS) ?: return null
         val o = obj(body) ?: return null
         if (o.optInt("code", -1) != 0) return null
-        val request = o.optJSONObject("request") ?: return null
-        return if (request.optInt("code", -1) == 0) request.optJSONObject("data") else null
+        // The request code is sometimes 2001 with the full data alongside: the data is what counts.
+        return o.optJSONObject("request")?.optJSONObject("data")
     }
 
     private fun searchQq(query: SongQuery): List<LyricCandidate> = searchUntilAccepted(query) { term ->
