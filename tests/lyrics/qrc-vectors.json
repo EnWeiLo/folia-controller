@@ -1,0 +1,14 @@
+[
+ {
+  "hex": "0C8D67DD3E549974B64ED2680459F13881AA15D10DB4CC8324B86311D0D741BD6AF5D8724F2B75716C3A763AFD2E129537CA1FA437EEC9C339DBFA5969F598BF41CEC305BE189BAD80E3A7AF218E9313DF8BD08BCE1105BB33F2E27DEE6B8B2977F9F693E95D125667A629313305C056BACB4ACC6CF09952573C32B969E0AC83CAF4C95579EC9692DDF8A2E283BBDDAEB9AD22F28290BEE362CD3405284777A211BF08A8C908D925091CCF6BBA381FE0B0D1E6A7AB25257AB9C51620B1AC22B258F4644A6F2B3AACF8C0614CFAB6A427F19165858F349E1E68EC13D79D22E8835B94934330239F89B939494C5F9FD5B89E1BB1BAE23B8D330792930B66054467",
+  "plain": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<QrcInfos>\n<QrcHeadInfo SaveTime=\"0\" Version=\"100\"/>\n<LyricInfo LyricCount=\"1\">\n<Lyric_1 LyricType=\"1\" LyricContent=\"[ti:晴天]\n[ar:周杰伦]\n[0,2000]晴(0,500)天(500,1500)\n[29390,3250]故(29390,300)事(29690,300)的(29990,250)小(30240,400)黄(30640,400)花(31040,1600)\n\"/>\n</LyricInfo>\n</QrcInfos>"
+ },
+ {
+  "hex": "6CD35395181299ED229EFC501F53D69B86E681413D18B8E84076730B83E488EE11A28AEBC1BF2206EF18FBB7151A03B0EF5A9FB1B03D78E25D63708C9EC4DCDA9E299FA63A53A133D613F4A3736A8BB2",
+  "plain": "[00:29.39]故事的小黄花\n[00:32.64]从出生那年就飘着\n"
+ },
+ {
+  "hex": "0696BCBB4C80C15FB16FA056B70EAF2B3517C3EE7B37317B",
+  "plain": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+ }
+]

@@ -62,14 +62,20 @@ object MediaHub {
     var webSink: ((String) -> Unit)? = null
     var uiListener: (() -> Unit)? = null
 
-    var includeTranslation = true
-        set(value) {
-            if (field != value) { field = value; pushLyric() }
-        }
     var convertToTraditional = true
         set(value) {
-            if (field != value) { field = value; pushLyric() }
+            if (field != value) { field = value; lyricContainer = null; pushLyric() }
         }
+
+    /** Every lyric match found for the current song, best first (for the manual picker). */
+    var lyricCandidates: List<LyricCandidate> = emptyList()
+        private set
+    private var candidatesSearched = false
+    var noLyricsChosen = false
+        private set
+    val lyricChoiceRemembered: Boolean get() = currentQuery()?.let { LyricChoices.has(it) } == true
+    val currentLyricCandidate: LyricCandidate? get() = lyricResult?.candidate
+    private var lyricContainer: String? = null
     /** Shifts lyrics against the audio: positive = lyrics later (e.g. Bluetooth delay). */
     var lyricOffsetMs = 0L
         set(value) {
@@ -100,6 +106,8 @@ object MediaHub {
 
     fun init(context: Context) {
         if (!::appContext.isInitialized) appContext = context.applicationContext
+        LyricChoices.init(context)
+        LocalLyrics.init(context)
     }
 
     private fun listenerComponent() = ComponentName(appContext, MediaListenerService::class.java)
@@ -209,6 +217,8 @@ object MediaHub {
                 coverDataUrl = null
                 coverSource = null
                 lyricResult = null
+                lyricContainer = null
+                lyricCandidates = emptyList()
                 lyricStatus = ""
                 lyricRequestId++
                 pushTrack()
@@ -238,6 +248,8 @@ object MediaHub {
             coverDataUrl = null
             coverSource = null
             lyricResult = null
+            lyricContainer = null
+            lyricCandidates = emptyList()
             startLyricLookup(next)
         } else if (previous?.durationMs == 0L && duration > 0 && lyricResult == null) {
             // Some players publish the length a moment later; it makes matching far more reliable.
@@ -288,6 +300,9 @@ object MediaHub {
 
     private fun startLyricLookup(info: TrackInfo) {
         val requestId = ++lyricRequestId
+        lyricCandidates = emptyList()
+        candidatesSearched = false
+        noLyricsChosen = false
         if (info.title.isBlank()) {
             lyricStatus = ""
             return
@@ -295,19 +310,110 @@ object MediaHub {
         lyricStatus = "正在搜尋歌詞…"
         lyricExecutor.execute {
             if (requestId != lyricRequestId) return@execute // skipped past this song already
-            val result = try {
-                LyricRepository.find(info.title, info.artist, info.album, info.durationMs)
+            val query = SongQuery(info.title, info.artist, info.album, info.durationMs)
+            var result: LyricResult? = null
+            var candidates: List<LyricCandidate>? = null
+            // A lyric the user picked by hand for this song wins.
+            val (noLyrics, chosen) = LyricChoices.get(query)
+            try {
+                if (chosen != null) LyricRepository.fetch(chosen)?.let { result = LyricResult(it, chosen) }
+                // Then a matching file in the local lyrics folder.
+                if (result == null && !noLyrics) result = LocalLyrics.find(query)
+                if (result == null && !noLyrics) {
+                    val found = LyricRepository.find(query)
+                    result = found.first
+                    candidates = found.second
+                }
             } catch (_: Throwable) {
-                null
             }
             main.post {
                 if (requestId != lyricRequestId || track?.key != info.key) return@post
-                lyricResult = result
-                lyricStatus = if (result == null) "找不到同步歌詞" else "歌詞：${result.sourceLabel}"
-                pushLyric()
-                notifyUi()
+                noLyricsChosen = noLyrics
+                candidates?.let {
+                    lyricCandidates = it
+                    candidatesSearched = true
+                }
+                setLyrics(result)
             }
         }
+    }
+
+    private fun setLyrics(result: LyricResult?) {
+        lyricResult = result
+        lyricContainer = null
+        lyricStatus = when {
+            noLyricsChosen -> "已設定這首歌不顯示歌詞"
+            result == null -> "找不到同步歌詞"
+            else -> "歌詞：${result.sourceLabel}"
+        }
+        pushLyric()
+        notifyUi()
+    }
+
+    // ---------- manual lyric choice ----------
+
+    private fun currentQuery(): SongQuery? = track?.let { SongQuery(it.title, it.artist, it.album, it.durationMs) }
+
+    /** Candidates for the picker; searches now if the song was matched from a remembered choice. */
+    fun loadCandidates(callback: (List<LyricCandidate>) -> Unit) {
+        val query = currentQuery() ?: return callback(emptyList())
+        val key = track?.key
+        if (candidatesSearched) return callback(lyricCandidates)
+        lyricExecutor.execute {
+            val found = runCatching { LyricRepository.searchAll(query) }.getOrDefault(emptyList())
+            main.post {
+                if (track?.key == key) {
+                    lyricCandidates = found
+                    candidatesSearched = true
+                }
+                callback(found)
+            }
+        }
+    }
+
+    /** Use this candidate for the current song and remember it. Calls back with success. */
+    fun chooseCandidate(candidate: LyricCandidate, callback: (Boolean) -> Unit) {
+        val query = currentQuery() ?: return callback(false)
+        val key = track?.key
+        lyricExecutor.execute {
+            val doc = runCatching { LyricRepository.fetch(candidate) }.getOrNull()
+            main.post {
+                if (doc == null || track?.key != key) return@post callback(false)
+                LyricChoices.set(query, candidate)
+                lyricRequestId++
+                noLyricsChosen = false
+                setLyrics(LyricResult(doc, candidate))
+                callback(true)
+            }
+        }
+    }
+
+    /** Show no lyrics for this song (remembered). */
+    fun chooseNone() {
+        val query = currentQuery() ?: return
+        LyricChoices.setNone(query)
+        lyricRequestId++
+        noLyricsChosen = true
+        setLyrics(null)
+    }
+
+    /** Search the current song again (e.g. after the local lyrics folder changed). */
+    fun refreshLyrics() {
+        val query = currentQuery() ?: return
+        val info = track ?: return
+        LyricRepository.forget(query)
+        startLyricLookup(info)
+        notifyUi()
+    }
+
+    /** Forget the hand-picked lyric for this song and search again. */
+    fun resetChoice() {
+        val query = currentQuery() ?: return
+        val info = track ?: return
+        LyricChoices.remove(query)
+        LyricRepository.forget(query)
+        startLyricLookup(info)
+        notifyUi()
     }
 
     // ---------- playback state ----------
@@ -404,30 +510,22 @@ object MediaHub {
             push("Lyric", data)
             return
         }
-        // Any source: LRCLIB also carries Simplified lyrics for Chinese songs. Japanese (has kana)
-        // and lyrics that are already Traditional come through unchanged.
-        val convert = convertToTraditional
-        fun text(value: String?): String? = value?.let { if (convert) LyricRepository.toTraditional(it) else it }
+        // Everything goes to Folia as one lyric container (word timing + translation + romaji);
+        // which subtitle line shows is each screen's own setting. Simplified → Traditional applies to
+        // every source; Japanese originals (kana) and romaji are left alone.
+        val container = lyricContainer ?: (result.doc.rawLrc?.let { raw ->
+            // A local .lrc goes to Folia untouched (its parser knows every LRC dialect), just converted.
+            if (convertToTraditional && !LyricFormats.hasKana(result.doc)) LyricRepository.toTraditional(raw) else raw
+        } ?: LyricFormats.toFoliaContainer(
+            if (convertToTraditional) LyricFormats.convertChinese(result.doc, LyricRepository::toTraditional) else result.doc,
+        )).also { lyricContainer = it }
 
-        data.put("source", result.source)
+        data.put("source", result.candidate.source)
         data.put("title", info.title)
         data.put("author", info.artist)
         if (info.durationMs > 0) data.put("duration", info.durationMs)
-        val karaoke = text(result.karaoke)
-        val lrc = text(result.lrc)
-        if (karaoke != null) {
-            data.put("hasKaraokeLyric", true)
-            data.put("karaokeLyric", karaoke)
-        }
-        if (lrc != null) {
-            data.put("hasLyric", true)
-            data.put("lrc", lrc)
-        }
-        val translation = if (includeTranslation) text(result.translation) else null
-        if (translation != null) {
-            data.put("hasTranslatedLyric", true)
-            data.put("translatedLyric", translation)
-        }
+        data.put("hasLyric", true)
+        data.put("lrc", container)
         push("Lyric", data)
     }
 

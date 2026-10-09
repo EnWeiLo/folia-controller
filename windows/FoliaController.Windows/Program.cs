@@ -10,6 +10,10 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length > 2 && args[0] == "--fixture-test")
+        {
+            return SmokeTest.RunFixtures(args[1], args[2]);
+        }
         if (args.Length > 0 && args[0] == "--smoke-test")
         {
             return SmokeTest.RunAsync(args).GetAwaiter().GetResult();

@@ -87,9 +87,15 @@ if (cover) {
 const state = lastOf('ControllerState');
 console.log('lyric status:', state?.lyricStatus);
 const lyric = lastOf('Lyric');
-console.log('lyric event:', JSON.stringify({ source: lyric?.source, hasLyric: lyric?.hasLyric, hasKaraoke: lyric?.hasKaraokeLyric, lrcStart: (lyric?.lrc || lyric?.karaokeLyric || '').slice(0, 80) }));
-if (lyric?.source === 'netease') {
-  check(!/[从这个们发书]/.test((lyric.lrc || '') + (lyric.karaokeLyric || '')), 'NetEase lyrics converted to Traditional');
+const container = lyric?.lrc || '';
+const tracks = Object.fromEntries((container.match(/^\[awlrc:(.+)\]$/)?.[1] || '').split(',').map((part) => {
+  const i = part.indexOf(':');
+  return [part.slice(0, i), Buffer.from(part.slice(i + 1), 'base64').toString('utf8')];
+}));
+console.log('lyric event:', JSON.stringify({ source: lyric?.source, hasLyric: lyric?.hasLyric, tracks: Object.keys(tracks), lrcStart: (tracks.lrc || '').slice(0, 90) }));
+if (lyric?.hasLyric) {
+  check(container.startsWith('[awlrc:lrc:') && (tracks.lrc || '').includes('['), 'lyrics sent as a Folia container', Object.keys(tracks).join(','));
+  check(!/[从这个们发书黄词]/.test((tracks.lrc || '') + (tracks.awlrc || '')), 'Chinese lyrics converted to Traditional');
 }
 
 // Controls.

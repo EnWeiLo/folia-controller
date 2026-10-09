@@ -64,8 +64,13 @@ class MainActivity : Activity() {
             Quality("smooth", "流暢", "約 60% 解析度，並關閉幾何背景", 0.6f, true),
         )
         private const val DEFAULT_QUALITY = "balanced"
+        // Folia's subtitle line under the lyrics (subtitleContentMode).
+        private val SUBTITLES = listOf(
+            "translation" to "中文翻譯", "romanization" to "羅馬拼音", "both" to "翻譯＋羅馬拼音", "none" to "不顯示",
+        )
         private val OFFSETS = longArrayOf(-1000, -500, -250, 0, 250, 500, 750, 1000, 1500)
         private const val AUTO_HIDE_MS = 4000L
+        private const val REQUEST_LYRICS_FOLDER = 41
     }
 
     private lateinit var prefs: SharedPreferences
@@ -257,6 +262,7 @@ class MainActivity : Activity() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             gravity = Gravity.CENTER
             setPadding(0, dp(2), 0, 0)
+            setOnClickListener { showLyricPicker() }
         }
         panel.addView(titleText, LinearLayout.LayoutParams(MATCH, WRAP))
         panel.addView(subtitleText, LinearLayout.LayoutParams(MATCH, WRAP))
@@ -297,12 +303,14 @@ class MainActivity : Activity() {
             setPadding(0, dp(8), 0, 0)
         }
         buttonRow.addView(iconButton(android.R.drawable.ic_menu_preferences, 44) { showSettings() })
+        buttonRow.addView(iconButton(android.R.drawable.ic_menu_agenda, 44) { showLyricPicker() })
         buttonRow.addView(spacer())
         buttonRow.addView(iconButton(android.R.drawable.ic_media_previous, 56) { MediaHub.skipPrevious() })
         playButton = iconButton(android.R.drawable.ic_media_play, 72) { MediaHub.togglePlayPause() }
         buttonRow.addView(playButton)
         buttonRow.addView(iconButton(android.R.drawable.ic_media_next, 56) { MediaHub.skipNext() })
         buttonRow.addView(spacer())
+        buttonRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(44), 1) })
         buttonRow.addView(iconButton(android.R.drawable.ic_menu_view, 44) { openSourceApp() })
         panel.addView(buttonRow, LinearLayout.LayoutParams(WRAP, WRAP))
         return panel
@@ -381,7 +389,9 @@ class MainActivity : Activity() {
             append(FoliaAssetServer.ORIGIN).append("/?obs=1&obsSource=now-playing&host=android-bridge")
             append("&visualizer=").append(Uri.encode(mode))
             if (prefs.getBoolean("daylight", false)) append("&daylight=1")
-            if (currentQuality().staticMode) append("&cfg=").append(Uri.encode("{\"stm\":true}"))
+            val cfg = JSONObject().put("subtitleContentMode", subtitleMode())
+            if (currentQuality().staticMode) cfg.put("staticMode", true)
+            append("&cfg=").append(Uri.encode(cfg.toString()))
         }
         webView.loadUrl(url)
     }
@@ -475,7 +485,6 @@ class MainActivity : Activity() {
     // ---------- settings ----------
 
     private fun applyHubPrefs() {
-        MediaHub.includeTranslation = prefs.getBoolean("translation", true)
         MediaHub.convertToTraditional = prefs.getBoolean("traditional", true)
         MediaHub.lyricOffsetMs = prefs.getLong("offset", 0L)
     }
@@ -486,6 +495,100 @@ class MainActivity : Activity() {
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+    }
+
+    // ---------- local lyrics folder ----------
+
+    private fun pickLyricsFolder() {
+        val builder = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("本機歌詞資料夾")
+            .setMessage(
+                "選一個放 .lrc 歌詞檔的資料夾（子資料夾也會找）。檔名用「歌名」、「歌手 - 歌名」或「歌名 - 歌手」，" +
+                    "播到那首歌時會優先使用這裡的歌詞。\n\n目前：${LocalLyrics.folderLabel ?: "未設定"}",
+            )
+            .setPositiveButton("選擇資料夾") { _, _ ->
+                try {
+                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQUEST_LYRICS_FOLDER)
+                } catch (_: ActivityNotFoundException) {
+                    android.widget.Toast.makeText(this, "這台裝置沒有資料夾選擇器", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .setOnDismissListener { enterImmersive() }
+        if (LocalLyrics.folderUri != null) {
+            builder.setNeutralButton("停用") { _, _ ->
+                LocalLyrics.clearFolder()
+                MediaHub.refreshLyrics()
+            }
+        }
+        builder.show()
+    }
+
+    @Deprecated("Activity result API needs AndroidX; this app has no dependencies.")
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_LYRICS_FOLDER && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            LocalLyrics.setFolder(uri)
+            MediaHub.refreshLyrics()
+            android.widget.Toast.makeText(this, "已設定本機歌詞資料夾", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ---------- lyric picker ----------
+
+    private fun showLyricPicker() {
+        handler.removeCallbacks(autoHide)
+        val track = MediaHub.track
+        if (track == null) {
+            android.widget.Toast.makeText(this, "現在沒有正在播放的歌曲", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val waiting = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("換歌詞")
+            .setMessage("正在搜尋各個歌詞來源…")
+            .setNegativeButton("取消", null)
+            .show()
+        MediaHub.loadCandidates { candidates ->
+            if (!waiting.isShowing) return@loadCandidates
+            waiting.dismiss()
+            showCandidateList(track, candidates)
+        }
+    }
+
+    private fun showCandidateList(track: TrackInfo, candidates: List<LyricCandidate>) {
+        val current = MediaHub.currentLyricCandidate
+        val shown = candidates.take(30)
+        val labels = shown.map { c ->
+            val isCurrent = current != null && current.source == c.source && current.id == c.id
+            val diff = if (track.durationMs > 0 && c.durationMs > 0) (c.durationMs - track.durationMs) / 1000.0 else null
+            val diffText = when {
+                diff == null -> ""
+                kotlin.math.abs(diff) < 0.5 -> "（長度相同）"
+                else -> String.format(Locale.US, "（%+.1f 秒）", diff)
+            }
+            val mark = when {
+                isCurrent -> "  ✓ 使用中"
+                c.accepted -> "  · 相符"
+                else -> ""
+            }
+            "【${LyricRepository.sourceName(c.source)}】${c.title}\n${c.artist}  ${formatTime(c.durationMs)}$diffText$mark"
+        }.toTypedArray()
+        val builder = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("換歌詞：${track.title}")
+            .setNegativeButton("這首不顯示歌詞") { _, _ -> MediaHub.chooseNone() }
+            .setOnDismissListener { enterImmersive(); scheduleAutoHide() }
+        if (shown.isEmpty()) builder.setMessage("每個來源都找不到這首歌。")
+        else builder.setItems(labels) { _, which ->
+            val chosen = shown[which]
+            MediaHub.chooseCandidate(chosen) { ok ->
+                val text = if (ok) "已換成「${LyricRepository.sourceName(chosen.source)}」的歌詞，下次也會使用" else "這個來源抓不到歌詞，換一個試試"
+                android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        if (MediaHub.lyricChoiceRemembered) builder.setNeutralButton("恢復自動選擇") { _, _ -> MediaHub.resetChoice() }
+        builder.show()
     }
 
     // ---------- quality & refresh rate ----------
@@ -602,10 +705,11 @@ class MainActivity : Activity() {
             "刷新率：${refreshLabel()}",
             "顯示 FPS：${onOff("show_fps", false)}",
             "日間主題：${onOff("daylight", false)}",
-            "顯示翻譯：${onOff("translation", true)}",
+            "副歌詞：${SUBTITLES.firstOrNull { it.first == subtitleMode() }?.second ?: "中文翻譯"}",
             "簡體歌詞轉繁體：${onOff("traditional", true)}",
             "歌詞時間偏移：${if (offset > 0) "+" else ""}${offset} ms",
             "保持螢幕常亮：${onOff("keep_screen_on", true)}",
+            "本機歌詞資料夾：${LocalLyrics.folderLabel ?: "未設定"}",
             "重新載入畫面",
         )
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
@@ -617,11 +721,12 @@ class MainActivity : Activity() {
                     2 -> pickRefreshRate()
                     3 -> { toggle("show_fps", false); loadFolia(); showSettings() }
                     4 -> { toggle("daylight", false); loadFolia(); showSettings() }
-                    5 -> { toggle("translation", true); applyHubPrefs(); showSettings() }
+                    5 -> pickSubtitle()
                     6 -> { toggle("traditional", true); applyHubPrefs(); showSettings() }
                     7 -> pickOffset()
                     8 -> { toggle("keep_screen_on", true); applyKeepScreenOn(); showSettings() }
-                    9 -> loadFolia()
+                    9 -> pickLyricsFolder()
+                    10 -> loadFolia()
                 }
             }
             .setOnDismissListener { enterImmersive(); scheduleAutoHide() }
@@ -638,6 +743,26 @@ class MainActivity : Activity() {
             .setTitle("歌詞動畫")
             .setSingleChoiceItems(MODES.map { "${it.label}（${it.id}）" }.toTypedArray(), current) { dialog, which ->
                 prefs.edit().putString("mode", MODES[which].id).apply()
+                dialog.dismiss()
+                loadFolia()
+            }
+            .setOnDismissListener { enterImmersive() }
+            .show()
+    }
+
+    private fun subtitleMode(): String {
+        val stored = prefs.getString("subtitle", null)
+        if (stored != null) return stored
+        // Before this setting existed there was an on/off translation switch.
+        return if (prefs.getBoolean("translation", true)) "translation" else "none"
+    }
+
+    private fun pickSubtitle() {
+        val current = SUBTITLES.indexOfFirst { it.first == subtitleMode() }.coerceAtLeast(0)
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("副歌詞（歌詞下方那一行）")
+            .setSingleChoiceItems(SUBTITLES.map { it.second }.toTypedArray(), current) { dialog, which ->
+                prefs.edit().putString("subtitle", SUBTITLES[which].first).apply()
                 dialog.dismiss()
                 loadFolia()
             }

@@ -33,6 +33,8 @@
     ['sonnet', '商籟'], ['tempera', '凝彩'], ['lumiere', '繪光'], ['still', '靜止'],
   ];
   var OFFSETS = [-1000, -500, -250, 0, 250, 500, 750, 1000, 1500];
+  // Folia's subtitle line under the lyrics (subtitleContentMode), chosen per device.
+  var SUBTITLES = [['translation', '中文翻譯'], ['romanization', '羅馬拼音'], ['both', '翻譯＋羅馬拼音'], ['none', '不顯示']];
 
   // Quality applies where we control how many pixels a CSS px is: the desktop window
   // (through WebView2 zoom) and phones / tablets (through the viewport). A desktop
@@ -94,6 +96,7 @@
     expand: 'M4 9V5a1 1 0 0 1 1-1h4v2H6v3H4zm11-5h4a1 1 0 0 1 1 1v4h-2V6h-3V4zM4 15h2v3h3v2H5a1 1 0 0 1-1-1v-4zm14 0h2v4a1 1 0 0 1-1 1h-4v-2h3v-3z',
     shrink: 'M7 4h2v4a1 1 0 0 1-1 1H4V7h3V4zm8 0h2v3h3v2h-4a1 1 0 0 1-1-1V4zM4 15h4a1 1 0 0 1 1 1v4H7v-3H4v-2zm12 0h4v2h-3v3h-2v-4a1 1 0 0 1 1-1z',
     close: 'M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z',
+    lyrics: 'M4 6h12v2H4V6zm0 4h12v2H4v-2zm0 4h8v2H4v-2zm14-1.5V5h4v2h-2v7.5a2.5 2.5 0 1 1-2-2.45z',
   };
   function icon(name) {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + ICONS[name] + '"/></svg>';
@@ -138,16 +141,20 @@
           '<span id="fc-dur">0:00</span></div>' +
         '<div class="fc-buttons">' +
           '<button class="fc-btn fc-small" id="fc-settings" title="設定" aria-label="設定">' + icon('gear') + '</button>' +
+          '<button class="fc-btn fc-small" id="fc-lyrics" title="換歌詞（L）" aria-label="換歌詞">' + icon('lyrics') + '</button>' +
           '<span class="fc-gap"></span>' +
           '<button class="fc-btn" id="fc-prev" title="上一首" aria-label="上一首">' + icon('prev') + '</button>' +
           '<button class="fc-btn fc-big" id="fc-play" title="播放／暫停（空白鍵）" aria-label="播放">' + icon('play') + '</button>' +
           '<button class="fc-btn" id="fc-next" title="下一首" aria-label="下一首">' + icon('next') + '</button>' +
           '<span class="fc-gap"></span>' +
+          '<span class="fc-btn-spacer"></span>' +
           '<button class="fc-btn fc-small" id="fc-full" title="全螢幕（F11）" aria-label="全螢幕">' + icon('expand') + '</button>' +
         '</div>' +
       '</div>' +
       '<div id="fc-scrim"></div>' +
-      '<div id="fc-panel" role="dialog" aria-label="設定"></div>';
+      '<div id="fc-panel" role="dialog" aria-label="設定"></div>' +
+      '<div id="fc-picker" class="fc-sheet" role="dialog" aria-label="換歌詞"></div>' +
+      '<div id="fc-toast" role="status"></div>';
     document.body.appendChild(root);
     applyUiScale();
 
@@ -164,7 +171,9 @@
     $('fc-next').onclick = function () { post('/api/control', { action: 'next' }); };
     $('fc-full').onclick = toggleFullscreen;
     $('fc-settings').onclick = function () { openPanel(!panelOpen); };
-    $('fc-scrim').onclick = function () { openPanel(false); };
+    $('fc-lyrics').onclick = function () { openPicker(!pickerOpen); };
+    $('fc-lyric-status').onclick = function () { openPicker(true); };
+    $('fc-scrim').onclick = function () { openPanel(false); openPicker(false); };
     $('fc-title').onclick = function () { hostMessage({ type: 'focusPlayer' }); };
 
     seek.addEventListener('input', function () {
@@ -187,12 +196,12 @@
       if (e.pointerType === 'mouse') show();
     }, { passive: true });
     document.addEventListener('pointerup', function (e) {
-      if (e.pointerType === 'mouse' || panelOpen) return;
+      if (e.pointerType === 'mouse' || panelOpen || pickerOpen) return;
       if (bar.contains(e.target)) { scheduleHide(); return; }
       if (root.classList.contains('fc-show')) hide(); else show();
     });
     document.addEventListener('dblclick', function (e) {
-      if (!bar.contains(e.target) && !$('fc-panel').contains(e.target)) toggleFullscreen();
+      if (!bar.contains(e.target) && !$('fc-panel').contains(e.target) && !$('fc-picker').contains(e.target)) toggleFullscreen();
     });
     bar.addEventListener('pointerenter', function () { clearTimeout(hideTimer); });
     bar.addEventListener('pointerleave', function () { scheduleHide(); });
@@ -222,7 +231,7 @@
     scheduleHide();
   }
   function hide() {
-    if (panelOpen || seeking) return;
+    if (panelOpen || pickerOpen || seeking) return;
     root.classList.remove('fc-show');
     document.documentElement.classList.add('fc-idle');
     if (document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
@@ -263,8 +272,12 @@
       case 'F11':
         toggleFullscreen();
         break;
+      case 'l':
+        openPicker(!pickerOpen);
+        break;
       case 'Escape':
-        if (panelOpen) openPanel(false);
+        if (pickerOpen) openPicker(false);
+        else if (panelOpen) openPanel(false);
         else if (fullscreen) toggleFullscreen();
         else handled = false;
         break;
@@ -358,14 +371,14 @@
       (qualityApplies ? selectRow('fc-quality', '畫質', qualityOptions, '越低越流暢，歌詞文字依然清晰') : '') +
       switchRow('fc-daylight', '日間主題') +
       switchRow('fc-fps-toggle', '顯示 FPS', '左上角顯示每秒畫出幾幀') +
+      selectRow('fc-subtitle', '副歌詞', SUBTITLES, '歌詞下方那一行：翻譯或羅馬拼音') +
       '<div class="fc-section">歌詞（所有裝置共用）</div>' +
-      switchRow('fc-translation', '顯示翻譯') +
       switchRow('fc-traditional', '簡體歌詞轉繁體', '日文歌詞不會轉換') +
       selectRow('fc-offset', '歌詞時間偏移', offsetOptions, '戴藍牙耳機時歌詞偏早，可以調成 +250～+500') +
       '<div class="fc-section">其他裝置</div>' +
       '<div class="fc-note" id="fc-lan"></div>' +
       '<div class="fc-section">快捷鍵</div>' +
-      '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · F 或雙擊 全螢幕 · Esc 離開</div>';
+      '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · L 換歌詞 · F 或雙擊 全螢幕 · Esc 離開</div>';
 
     $('fc-close').onclick = function () { openPanel(false); };
     $('fc-mode').onchange = function () { store.set('mode', this.value); reloadWithSettings(); };
@@ -386,7 +399,7 @@
       if (on) startFps(); else stopFps();
       syncPanel();
     };
-    $('fc-translation').onclick = function () { post('/api/settings', { translation: !state.settings.translation }); };
+    $('fc-subtitle').onchange = function () { store.set('subtitle', this.value); reloadWithSettings(); };
     $('fc-traditional').onclick = function () { post('/api/settings', { traditional: !state.settings.traditional }); };
     $('fc-offset').onchange = function () { post('/api/settings', { offsetMs: Number(this.value) }); };
   }
@@ -401,7 +414,7 @@
     if (qualityApplies) $('fc-quality').value = qualityId();
     setSwitch('fc-daylight', store.get('daylight', false));
     setSwitch('fc-fps-toggle', store.get('fps', false));
-    setSwitch('fc-translation', state.settings.translation);
+    $('fc-subtitle').value = store.get('subtitle', 'translation');
     setSwitch('fc-traditional', state.settings.traditional);
     $('fc-offset').value = String(state.settings.offsetMs || 0);
     var lan = $('fc-lan');
@@ -416,6 +429,7 @@
   }
 
   function openPanel(open) {
+    if (open && pickerOpen) openPicker(false);
     panelOpen = open;
     root.classList.toggle('fc-panel-open', open);
     if (open) {
@@ -425,6 +439,108 @@
     } else {
       scheduleHide();
     }
+  }
+
+  // ---------- lyric picker ----------
+  var pickerOpen = false;
+  var pickerRequest = 0;
+
+  function escapeHtml(text) {
+    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function toast(text) {
+    var el = $('fc-toast');
+    el.textContent = text;
+    el.classList.add('fc-on');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(function () { el.classList.remove('fc-on'); }, 3200);
+  }
+
+  function openPicker(open) {
+    if (open && panelOpen) openPanel(false);
+    pickerOpen = open;
+    root.classList.toggle('fc-picker-open', open);
+    if (open) {
+      show();
+      clearTimeout(hideTimer);
+      loadCandidates();
+    } else {
+      scheduleHide();
+    }
+  }
+
+  function renderPicker(data, loading) {
+    var sheet = $('fc-picker');
+    var html = '<div class="fc-panel-head"><h2>換歌詞</h2><button class="fc-btn fc-small" id="fc-picker-close" aria-label="關閉">' + icon('close') + '</button></div>';
+    if (data && data.hasSession) {
+      html += '<div class="fc-note">' + escapeHtml(data.title) + (data.artist ? '　·　' + escapeHtml(data.artist) : '') +
+        (data.durationMs ? '　·　' + fmt(data.durationMs) : '') + '</div>';
+    }
+    if (loading) {
+      html += '<div class="fc-empty">正在搜尋各個歌詞來源…</div>';
+    } else if (!data || !data.hasSession) {
+      html += '<div class="fc-empty">現在沒有正在播放的歌曲。</div>';
+    } else if (!data.candidates.length) {
+      html += '<div class="fc-empty">' + (data.timeout ? '搜尋逾時，請稍後再試。' : '每個來源都找不到這首歌。') + '</div>';
+    } else {
+      html += '<div class="fc-list">';
+      data.candidates.forEach(function (c, index) {
+        var current = data.current && data.current.source === c.source && data.current.id === c.id;
+        var diff = data.durationMs && c.durationMs ? (c.durationMs - data.durationMs) / 1000 : null;
+        var diffText = diff == null ? '' : (Math.abs(diff) < 0.5 ? '長度相同' : (diff > 0 ? '+' : '') + diff.toFixed(1) + ' 秒');
+        html += '<button class="fc-item' + (current ? ' fc-current' : '') + '" data-index="' + index + '">' +
+          '<span class="fc-badge fc-src-' + escapeHtml(c.source) + '">' + escapeHtml(c.sourceName) + '</span>' +
+          '<span class="fc-item-main"><span class="fc-item-title">' + escapeHtml(c.title) + '</span>' +
+          '<span class="fc-item-sub">' + escapeHtml(c.artist) + (c.durationMs ? '　' + fmt(c.durationMs) : '') +
+          (diffText ? '（' + diffText + '）' : '') + '</span></span>' +
+          (current ? '<span class="fc-tag">使用中</span>' : c.accepted ? '<span class="fc-tag fc-tag-dim">相符</span>' : '') +
+          '</button>';
+      });
+      html += '</div>';
+    }
+    if (data && data.hasSession) {
+      html += '<div class="fc-actions">' +
+        '<button class="fc-text-btn" id="fc-pick-none"' + (data.noLyrics ? ' disabled' : '') + '>這首歌不顯示歌詞</button>' +
+        (data.remembered ? '<button class="fc-text-btn" id="fc-pick-reset">恢復自動選擇</button>' : '') +
+        '</div><div class="fc-keys">選過的歌詞會記住，下次播這首歌時自動使用。</div>';
+    }
+    sheet.innerHTML = html;
+    $('fc-picker-close').onclick = function () { openPicker(false); };
+    sheet.querySelectorAll('.fc-item').forEach(function (button) {
+      button.onclick = function () {
+        var c = data.candidates[Number(button.getAttribute('data-index'))];
+        button.classList.add('fc-busy');
+        post('/api/lyrics/choose', c).then(function (r) { return r && r.json(); }).then(function (result) {
+          if (result && result.ok) {
+            toast('已換成「' + c.sourceName + '」的歌詞，下次也會使用');
+            openPicker(false);
+          } else {
+            button.classList.remove('fc-busy');
+            toast('這個來源抓不到歌詞，換一個試試');
+          }
+        });
+      };
+    });
+    var none = $('fc-pick-none');
+    if (none) none.onclick = function () {
+      post('/api/lyrics/none').then(function () { toast('這首歌之後不顯示歌詞'); openPicker(false); });
+    };
+    var reset = $('fc-pick-reset');
+    if (reset) reset.onclick = function () {
+      post('/api/lyrics/reset').then(function () { toast('已恢復自動選擇，正在重新搜尋'); openPicker(false); });
+    };
+  }
+
+  function loadCandidates() {
+    var request = ++pickerRequest;
+    renderPicker(null, true);
+    fetch('/api/lyrics/candidates', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) { if (request === pickerRequest && pickerOpen) renderPicker(data, false); })
+      .catch(function () { if (request === pickerRequest && pickerOpen) renderPicker({ hasSession: true, candidates: [], timeout: true }, false); });
   }
 
   // ---------- FPS readout ----------

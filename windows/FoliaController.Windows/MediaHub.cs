@@ -23,6 +23,10 @@ internal sealed class MediaHub
     private MediaSnapshot? _snap;
     private string? _trackKey;
     private LyricResult? _lyric;
+    private string? _lyricContainer;
+    private List<LyricCandidate> _candidates = new();
+    private bool _candidatesSearched;
+    private bool _noLyricsChosen;
     private string _lyricStatus = "";
     private int _lyricRequest;
     private CancellationTokenSource? _lyricCts;
@@ -71,6 +75,10 @@ internal sealed class MediaHub
                 _snap = null;
                 _trackKey = null;
                 _lyric = null;
+                _lyricContainer = null;
+                _candidates = new();
+                _candidatesSearched = false;
+                _noLyricsChosen = false;
                 _lyricStatus = "";
                 _cover = null;
                 _coverVersionLoaded = -1;
@@ -90,6 +98,10 @@ internal sealed class MediaHub
                 {
                     _trackKey = key;
                     _lyric = null;
+                    _lyricContainer = null;
+                    _candidates = new();
+                    _candidatesSearched = false;
+                    _noLyricsChosen = false;
                     _cover = null;
                     _coverVersionLoaded = -1;
                     StartLyricLookup(snap, key);
@@ -148,12 +160,31 @@ internal sealed class MediaHub
         var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         _lyricCts = cts;
         _lyricStatus = "正在搜尋歌詞…";
+        var query = new SongQuery(snap.Title, snap.Artist, snap.Album, snap.DurationMs);
         _ = Task.Run(async () =>
         {
             LyricResult? result = null;
+            List<LyricCandidate>? candidates = null;
+            var noLyrics = false;
             try
             {
-                result = await LyricRepository.FindAsync(snap.Title, snap.Artist, snap.Album, snap.DurationMs, cts.Token);
+                // A lyric the user picked by hand for this song wins.
+                var choice = LyricChoices.Get(query);
+                if (choice.NoLyrics)
+                {
+                    noLyrics = true;
+                }
+                else if (choice.Candidate != null)
+                {
+                    var doc = await LyricRepository.FetchAsync(choice.Candidate, cts.Token);
+                    if (doc != null) result = new LyricResult(doc, choice.Candidate);
+                }
+                // Then a matching file in the local lyrics folder.
+                if (result == null && !noLyrics) result = LocalLyrics.Find(query);
+                if (result == null && !noLyrics)
+                {
+                    (result, candidates) = await LyricRepository.FindAsync(query, cts.Token);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -168,14 +199,170 @@ internal sealed class MediaHub
             lock (_gate)
             {
                 if (request != _lyricRequest || key != _trackKey) return;
-                _lyric = result;
-                _lyricStatus = result == null ? "找不到同步歌詞" : $"歌詞：{result.SourceLabel}";
+                if (candidates != null)
+                {
+                    _candidates = candidates;
+                    _candidatesSearched = true;
+                }
+                _noLyricsChosen = noLyrics;
+                SetLyricLocked(result);
                 lyricEvent = LyricEvent();
                 stateEvent = ControllerStateEvent();
             }
             Broadcast(lyricEvent);
             Broadcast(stateEvent);
         });
+    }
+
+    private void SetLyricLocked(LyricResult? result)
+    {
+        _lyric = result;
+        _lyricContainer = null;
+        _lyricStatus = _noLyricsChosen ? "已設定這首歌不顯示歌詞"
+            : result == null ? "找不到同步歌詞"
+            : $"歌詞：{result.SourceLabel}";
+    }
+
+    // ---------- manual lyric choice ----------
+
+    /// <summary>The picker's list: every match found for the current song (searched now if needed).</summary>
+    public async Task<JsonObject> CandidatesAsync(CancellationToken ct)
+    {
+        SongQuery? query;
+        string? key;
+        bool needSearch;
+        lock (_gate)
+        {
+            query = _snap == null ? null : new SongQuery(_snap.Title, _snap.Artist, _snap.Album, _snap.DurationMs);
+            key = _trackKey;
+            needSearch = query != null && !_candidatesSearched;
+        }
+        if (query == null) return new JsonObject { ["hasSession"] = false, ["candidates"] = new JsonArray() };
+        if (needSearch)
+        {
+            var found = await LyricRepository.SearchAllAsync(query, ct);
+            lock (_gate)
+            {
+                if (key == _trackKey)
+                {
+                    _candidates = found;
+                    _candidatesSearched = true;
+                }
+            }
+        }
+        lock (_gate)
+        {
+            var list = new JsonArray();
+            foreach (var c in _candidates.Take(40)) list.Add(c.ToJson());
+            return new JsonObject
+            {
+                ["hasSession"] = true,
+                ["title"] = query.Title,
+                ["artist"] = query.Artist,
+                ["durationMs"] = query.DurationMs,
+                ["current"] = _lyric == null ? null : new JsonObject { ["source"] = _lyric.Candidate.Source, ["id"] = _lyric.Candidate.Id },
+                ["noLyrics"] = _noLyricsChosen,
+                ["remembered"] = LyricChoices.Has(query),
+                ["candidates"] = list,
+            };
+        }
+    }
+
+    /// <summary>Use this candidate for the current song, and remember it for next time.</summary>
+    public async Task<bool> ChooseAsync(LyricCandidate candidate, CancellationToken ct)
+    {
+        SongQuery? query;
+        string? key;
+        lock (_gate)
+        {
+            query = _snap == null ? null : new SongQuery(_snap.Title, _snap.Artist, _snap.Album, _snap.DurationMs);
+            key = _trackKey;
+        }
+        if (query == null) return false;
+        LyricCandidate full;
+        lock (_gate) full = _candidates.FirstOrDefault(c => c.Source == candidate.Source && c.Id == candidate.Id) ?? candidate;
+        var doc = await LyricRepository.FetchAsync(full, ct);
+        if (doc == null) return false;
+        LyricChoices.Set(query, full);
+        ApplyManual(key, new LyricResult(doc, full), noLyrics: false);
+        return true;
+    }
+
+    /// <summary>Show no lyrics for this song (remembered).</summary>
+    public void ChooseNone()
+    {
+        SongQuery? query;
+        string? key;
+        lock (_gate)
+        {
+            query = _snap == null ? null : new SongQuery(_snap.Title, _snap.Artist, _snap.Album, _snap.DurationMs);
+            key = _trackKey;
+        }
+        if (query == null) return;
+        LyricChoices.SetNone(query);
+        ApplyManual(key, null, noLyrics: true);
+    }
+
+    /// <summary>Search the current song again (e.g. after the local lyrics folder changed).</summary>
+    public void RefreshLyrics()
+    {
+        MediaSnapshot? snap;
+        string? key;
+        lock (_gate)
+        {
+            snap = _snap;
+            key = _trackKey;
+        }
+        if (snap == null || key == null) return;
+        LyricRepository.Forget(new SongQuery(snap.Title, snap.Artist, snap.Album, snap.DurationMs));
+        string stateEvent;
+        lock (_gate)
+        {
+            if (key != _trackKey) return;
+            StartLyricLookup(snap, key);
+            stateEvent = ControllerStateEvent();
+        }
+        Broadcast(stateEvent);
+    }
+
+    /// <summary>Forget the hand-picked lyric for this song and search again.</summary>
+    public void ResetChoice()
+    {
+        MediaSnapshot? snap;
+        string? key;
+        lock (_gate)
+        {
+            snap = _snap;
+            key = _trackKey;
+        }
+        if (snap == null || key == null) return;
+        LyricChoices.Remove(new SongQuery(snap.Title, snap.Artist, snap.Album, snap.DurationMs));
+        LyricRepository.Forget(new SongQuery(snap.Title, snap.Artist, snap.Album, snap.DurationMs));
+        string stateEvent;
+        lock (_gate)
+        {
+            if (key != _trackKey) return;
+            _noLyricsChosen = false;
+            StartLyricLookup(snap, key);
+            stateEvent = ControllerStateEvent();
+        }
+        Broadcast(stateEvent);
+    }
+
+    private void ApplyManual(string? key, LyricResult? result, bool noLyrics)
+    {
+        string lyricEvent, stateEvent;
+        lock (_gate)
+        {
+            if (key != _trackKey) return;
+            CancelLyricLookup();
+            _noLyricsChosen = noLyrics;
+            SetLyricLocked(result);
+            lyricEvent = LyricEvent();
+            stateEvent = ControllerStateEvent();
+        }
+        Broadcast(lyricEvent);
+        Broadcast(stateEvent);
     }
 
     // ---------- cover art ----------
@@ -237,15 +424,11 @@ internal sealed class MediaHub
         {
             var lyricChanged = false;
             var offsetChanged = false;
-            if (body.TryGetProperty("translation", out var t) && (t.ValueKind is JsonValueKind.True or JsonValueKind.False))
-            {
-                lyricChanged |= _settings.Translation != t.GetBoolean();
-                _settings.Translation = t.GetBoolean();
-            }
             if (body.TryGetProperty("traditional", out var tr) && (tr.ValueKind is JsonValueKind.True or JsonValueKind.False))
             {
                 lyricChanged |= _settings.Traditional != tr.GetBoolean();
                 _settings.Traditional = tr.GetBoolean();
+                if (lyricChanged) _lyricContainer = null;
             }
             if (body.TryGetProperty("offsetMs", out var o) && o.ValueKind == JsonValueKind.Number && o.TryGetInt32(out var offset))
             {
@@ -320,33 +503,21 @@ internal sealed class MediaHub
             data["hasLyric"] = false;
             return Envelope("Lyric", data);
         }
-        // Any source: LRCLIB also carries Simplified lyrics for Chinese songs. Japanese (has kana)
-        // and lyrics that are already Traditional come through unchanged.
-        var convert = _settings.Traditional;
-        string? Text(string? value) => value == null ? null : convert ? ChineseConverter.ToTraditional(value) : value;
+        // Everything goes to Folia as one lyric container (word timing + translation + romaji);
+        // which subtitle line shows is each screen's own setting. Simplified → Traditional applies to
+        // every source; Japanese originals (kana) and romaji are left alone.
+        // A local .lrc goes to Folia untouched (its parser knows every LRC dialect), just converted.
+        _lyricContainer ??= result.Doc.RawLrc is { } raw
+            ? (_settings.Traditional && !LyricFormats.HasKana(result.Doc) ? ChineseConverter.ToTraditional(raw) : raw)
+            : LyricFormats.ToFoliaContainer(
+                _settings.Traditional ? LyricFormats.ConvertChinese(result.Doc, ChineseConverter.ToTraditional) : result.Doc);
 
-        data["source"] = result.Source;
+        data["source"] = result.Candidate.Source;
         data["title"] = snap.Title;
         data["author"] = snap.Artist;
         if (snap.DurationMs > 0) data["duration"] = snap.DurationMs;
-        var karaoke = Text(result.Karaoke);
-        var lrc = Text(result.Lrc);
-        if (karaoke != null)
-        {
-            data["hasKaraokeLyric"] = true;
-            data["karaokeLyric"] = karaoke;
-        }
-        if (lrc != null)
-        {
-            data["hasLyric"] = true;
-            data["lrc"] = lrc;
-        }
-        var translation = _settings.Translation ? Text(result.Translation) : null;
-        if (translation != null)
-        {
-            data["hasTranslatedLyric"] = true;
-            data["translatedLyric"] = translation;
-        }
+        data["hasLyric"] = true;
+        data["lrc"] = _lyricContainer;
         return Envelope("Lyric", data);
     }
 
@@ -385,7 +556,7 @@ internal sealed class MediaHub
             ["lyricStatus"] = _lyricStatus,
             ["settings"] = new JsonObject
             {
-                ["translation"] = _settings.Translation,
+
                 ["traditional"] = _settings.Traditional,
                 ["offsetMs"] = _settings.OffsetMs,
             },

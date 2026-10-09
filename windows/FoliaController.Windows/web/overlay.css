@@ -140,6 +140,9 @@ html.fc-idle, html.fc-idle * { cursor: none !important; }
 .fc-btn.fc-big:hover { background: rgba(255, 255, 255, 0.2); }
 .fc-btn.fc-small { width: calc(var(--u) * 40); height: calc(var(--u) * 40); color: var(--fg2); }
 .fc-gap { width: calc(var(--u) * 18); }
+.fc-btn-spacer { width: calc(var(--u) * 40); flex: none; }
+#fc-lyric-status { cursor: pointer; }
+#fc-lyric-status:hover { color: var(--fg2); text-decoration: underline; }
 
 /* ---------- connection notice ---------- */
 #fc-notice {
@@ -166,7 +169,7 @@ html.fc-idle, html.fc-idle * { cursor: none !important; }
   display: none;
   pointer-events: auto;
 }
-#fc-panel {
+#fc-panel, .fc-sheet {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -183,7 +186,9 @@ html.fc-idle, html.fc-idle * { cursor: none !important; }
   display: none;
   pointer-events: auto;
 }
-#fc-root.fc-panel-open #fc-scrim, #fc-root.fc-panel-open #fc-panel { display: block; }
+#fc-root.fc-panel-open #fc-scrim, #fc-root.fc-panel-open #fc-panel,
+#fc-root.fc-picker-open #fc-scrim, #fc-root.fc-picker-open #fc-picker { display: block; }
+.fc-sheet { width: min(calc(100% - var(--u) * 32), calc(var(--u) * 560)); }
 .fc-panel-head {
   display: flex;
   align-items: center;
@@ -282,3 +287,78 @@ html.fc-idle, html.fc-idle * { cursor: none !important; }
 @media (prefers-reduced-motion: reduce) {
   #fc-bar, .fc-switch, .fc-switch::after { transition: none; }
 }
+
+/* ---------- lyric picker ---------- */
+.fc-list { margin-top: calc(var(--u) * 8); }
+.fc-item {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 12);
+  width: 100%;
+  padding: calc(var(--u) * 10) calc(var(--u) * 20);
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fc-item:hover { background: rgba(255, 255, 255, 0.07); }
+.fc-item:focus-visible { outline: calc(var(--u) * 2) solid var(--accent); outline-offset: calc(var(--u) * -2); }
+.fc-item.fc-current { background: rgba(74, 222, 128, 0.1); }
+.fc-item.fc-busy { opacity: 0.5; pointer-events: none; }
+.fc-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fc-item-title, .fc-item-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-item-sub { color: var(--fg3); font-size: calc(var(--u) * 12.5); }
+.fc-badge {
+  flex: none;
+  min-width: calc(var(--u) * 64);
+  padding: calc(var(--u) * 3) calc(var(--u) * 8);
+  border-radius: calc(var(--u) * 6);
+  font-size: calc(var(--u) * 12);
+  text-align: center;
+  background: rgba(255, 255, 255, 0.1);
+}
+.fc-src-netease { background: rgba(220, 38, 38, 0.35); }
+.fc-src-qq { background: rgba(34, 197, 94, 0.3); }
+.fc-src-kugou { background: rgba(59, 130, 246, 0.35); }
+.fc-src-lrclib { background: rgba(168, 85, 247, 0.3); }
+.fc-src-amll-ncm, .fc-src-amll-qq { background: rgba(234, 179, 8, 0.35); }
+.fc-tag { flex: none; font-size: calc(var(--u) * 12); color: #4ade80; }
+.fc-tag-dim { color: var(--fg3); }
+.fc-empty { padding: calc(var(--u) * 28) calc(var(--u) * 20); color: var(--fg2); text-align: center; }
+.fc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 8);
+  margin: calc(var(--u) * 12) calc(var(--u) * 20) 0;
+}
+.fc-text-btn {
+  font: inherit;
+  font-size: calc(var(--u) * 13.5);
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.08);
+  border: calc(var(--u) * 1) solid var(--line);
+  border-radius: calc(var(--u) * 8);
+  padding: calc(var(--u) * 7) calc(var(--u) * 14);
+  cursor: pointer;
+}
+.fc-text-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.fc-text-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* ---------- toast ---------- */
+#fc-toast {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--u) * 18);
+  transform: translateX(-50%) translateY(calc(var(--u) * -8));
+  max-width: calc(100% - var(--u) * 32);
+  padding: calc(var(--u) * 9) calc(var(--u) * 18);
+  border-radius: calc(var(--u) * 999);
+  background: rgba(24, 24, 27, 0.92);
+  border: calc(var(--u) * 1) solid var(--line);
+  font-size: calc(var(--u) * 13.5);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+#fc-toast.fc-on { opacity: 1; transform: translateX(-50%); }

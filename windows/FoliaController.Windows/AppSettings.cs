@@ -15,6 +15,7 @@ internal sealed class AppSettings
     public int[]? WindowBounds { get; set; }
     public bool WindowMaximized { get; set; }
     public bool TrayHintShown { get; set; }
+    public string? LocalLyricsFolder { get; set; }
 
     /// <summary>False for the CI smoke test, which must not touch the real settings file.</summary>
     [JsonIgnore]

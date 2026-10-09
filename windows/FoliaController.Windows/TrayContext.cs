@@ -20,6 +20,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly ToolStripMenuItem _lanItem;
     private readonly ToolStripMenuItem _copyLanItem;
     private readonly ToolStripMenuItem _autoStartItem;
+    private readonly ToolStripMenuItem _localFolderItem;
     private MainForm? _form;
     private string[] _lanUrls = Array.Empty<string>();
     private bool _tooltipQueued;
@@ -36,6 +37,7 @@ internal sealed class TrayContext : ApplicationContext
         _hub.Broadcast = _server.Broadcast;
         _hub.LanInfo = () => (_server.Lan, _lanUrls);
         _hub.TrackChanged += QueueTooltip;
+        LocalLyrics.Folder = () => _settings.LocalLyricsFolder;
 
         StartServer(_settings.AllowLan);
 
@@ -45,12 +47,13 @@ internal sealed class TrayContext : ApplicationContext
         _lanItem = new ToolStripMenuItem("允許區網裝置連線（平板、手機）", null, (_, _) => ToggleLan());
         _copyLanItem = new ToolStripMenuItem("複製區網網址", null, (_, _) => CopyLanUrl());
         _autoStartItem = new ToolStripMenuItem("開機時自動啟動", null, (_, _) => ToggleAutoStart());
+        _localFolderItem = new ToolStripMenuItem("本機歌詞資料夾…", null, (_, _) => ChooseLocalFolder());
         var exitItem = new ToolStripMenuItem("結束", null, (_, _) => Quit());
         menu.Items.AddRange(new ToolStripItem[]
         {
             openItem, browserItem, new ToolStripSeparator(),
             _lanItem, _copyLanItem, new ToolStripSeparator(),
-            _autoStartItem, new ToolStripSeparator(),
+            _localFolderItem, _autoStartItem, new ToolStripSeparator(),
             exitItem,
         });
         menu.Opening += (_, _) => RefreshMenu();
@@ -171,6 +174,9 @@ internal sealed class TrayContext : ApplicationContext
         _copyLanItem.Enabled = _server.Lan && _lanUrls.Length > 0;
         _copyLanItem.Text = _copyLanItem.Enabled ? $"複製區網網址（{_lanUrls[0]}）" : "複製區網網址";
         try { _autoStartItem.Checked = AutoStart.IsEnabled(); } catch (Exception) { _autoStartItem.Checked = false; }
+        var folder = _settings.LocalLyricsFolder;
+        _localFolderItem.Text = string.IsNullOrEmpty(folder) ? "本機歌詞資料夾…（未設定）" : $"本機歌詞資料夾…（{Path.GetFileName(folder.TrimEnd('\\'))}）";
+        _localFolderItem.Checked = !string.IsNullOrEmpty(folder);
     }
 
     private void ShowWindow()
@@ -216,6 +222,39 @@ internal sealed class TrayContext : ApplicationContext
         {
             _tray.ShowBalloonTip(8000, "無法開啟區網連線", "連接埠被占用，已改回只有這台電腦可以使用。", ToolTipIcon.Warning);
         }
+    }
+
+    private void ChooseLocalFolder()
+    {
+        var current = _settings.LocalLyricsFolder;
+        if (!string.IsNullOrEmpty(current))
+        {
+            var answer = MessageBox.Show(
+                $"目前的本機歌詞資料夾：\n{current}\n\n按「是」換一個資料夾，按「否」停用本機歌詞。",
+                "本機歌詞資料夾", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+            if (answer == DialogResult.Cancel) return;
+            if (answer == DialogResult.No)
+            {
+                _settings.LocalLyricsFolder = null;
+                _settings.Save();
+                LocalLyrics.Invalidate();
+                _hub.RefreshLyrics();
+                return;
+            }
+        }
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "選擇放 .lrc 歌詞檔的資料夾（子資料夾也會找）。檔名用「歌名」、「歌手 - 歌名」或「歌名 - 歌手」。",
+            UseDescriptionForTitle = true,
+            ShowNewFolderButton = false,
+        };
+        if (!string.IsNullOrEmpty(current) && Directory.Exists(current)) dialog.InitialDirectory = current;
+        if (dialog.ShowDialog() != DialogResult.OK || string.IsNullOrEmpty(dialog.SelectedPath)) return;
+        _settings.LocalLyricsFolder = dialog.SelectedPath;
+        _settings.Save();
+        LocalLyrics.Invalidate();
+        _hub.RefreshLyrics();
+        _tray.ShowBalloonTip(5000, "已設定本機歌詞資料夾", dialog.SelectedPath, ToolTipIcon.Info);
     }
 
     private void CopyLanUrl()

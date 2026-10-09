@@ -31,8 +31,13 @@
   var query = 'obs=1&obsSource=now-playing&host=' + encodeURIComponent(location.host) +
     '&visualizer=' + encodeURIComponent(mode);
   if (get('daylight', false)) query += '&daylight=1';
-  // 流暢 quality also turns on Folia's static mode (no geometric background).
-  if (get('quality', '') === 'smooth') query += '&cfg=' + encodeURIComponent('{"stm":true}');
+  // Folia appearance overrides: the subtitle line under the lyrics, and 流暢 quality's static
+  // mode (no geometric background).
+  var SUBTITLES = ['translation', 'romanization', 'both', 'none'];
+  var subtitle = get('subtitle', 'translation');
+  var cfg = { subtitleContentMode: SUBTITLES.indexOf(subtitle) >= 0 ? subtitle : 'translation' };
+  if (get('quality', '') === 'smooth') cfg.staticMode = true;
+  query += '&cfg=' + encodeURIComponent(JSON.stringify(cfg));
   location.replace('/?' + query);
 })();
 </script>

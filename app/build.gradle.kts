@@ -43,6 +43,17 @@ android {
         ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~"
     }
 
+    testOptions {
+        // org.json and android.* calls in unit tests return defaults instead of throwing.
+        unitTests.isReturnDefaultValues = true
+        unitTests.all {
+            it.systemProperty("lyricFixtures", rootProject.file("tests/lyrics").absolutePath)
+            it.systemProperty("liveReport", rootProject.file("app/build/reports/live-lyrics.txt").absolutePath)
+            it.environment("LIVE_LYRICS", System.getenv("LIVE_LYRICS") ?: "")
+            it.testLogging { showStandardStreams = true; events("passed", "failed") }
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -50,4 +61,10 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+    // The real org.json for JVM unit tests (android.jar only has stubs).
+    testImplementation("org.json:json:20240303")
 }

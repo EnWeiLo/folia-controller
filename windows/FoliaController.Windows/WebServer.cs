@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Channels;
 
 namespace FoliaController;
@@ -256,6 +257,20 @@ internal sealed class WebServer : IDisposable
                     case "/api/settings":
                         _hub.UpdateSettings(body);
                         return Json("{\"ok\":true}");
+                    case "/api/lyrics/choose":
+                        var candidate = LyricCandidate.FromJson(JsonNode.Parse(body.GetRawText()));
+                        if (candidate == null) return (400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Bad candidate"), NoCache);
+                        using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
+                        {
+                            var chosen = await _hub.ChooseAsync(candidate, cts.Token);
+                            return Json(chosen ? "{\"ok\":true}" : "{\"ok\":false}");
+                        }
+                    case "/api/lyrics/none":
+                        _hub.ChooseNone();
+                        return Json("{\"ok\":true}");
+                    case "/api/lyrics/reset":
+                        _hub.ResetChoice();
+                        return Json("{\"ok\":true}");
                 }
             }
             return (404, "text/plain; charset=utf-8", Array.Empty<byte>(), NoCache);
@@ -272,6 +287,18 @@ internal sealed class WebServer : IDisposable
             return (200, "text/html; charset=utf-8", isFolia ? _assets.IndexHtml : _assets.LauncherHtml, NoCache);
         }
         if (path == "/api/state") return Json(_hub.ControllerStateJson());
+        if (path == "/api/lyrics/candidates")
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            try
+            {
+                return Json((await _hub.CandidatesAsync(cts.Token)).ToJsonString());
+            }
+            catch (OperationCanceledException)
+            {
+                return Json("{\"hasSession\":true,\"candidates\":[],\"timeout\":true}");
+            }
+        }
         if (path.StartsWith("/api/cover/", StringComparison.Ordinal) &&
             int.TryParse(path["/api/cover/".Length..], out var coverId) && _hub.GetCover(coverId) is { } cover)
         {

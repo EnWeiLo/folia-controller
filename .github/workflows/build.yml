@@ -101,8 +101,29 @@ jobs:
         with:
           gradle-version: "8.14.3"
 
+      # Lyric format fixtures (shared with the Windows build) must match; the live search over
+      # NetEase / QQ / Kugou / LRCLIB / AMLL only writes a report.
+      - name: Unit tests
+        env:
+          LIVE_LYRICS: "1"
+        run: gradle --no-daemon :app:testReleaseUnitTest
+
       - name: Build APK
         run: gradle --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Collect test reports
+        if: always()
+        run: |
+          mkdir -p android-reports
+          cp app/build/reports/live-lyrics.txt android-reports/ 2>/dev/null || true
+          cp -r app/build/test-results android-reports/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-reports
+          path: android-reports/
+          retention-days: 7
 
       - name: Name the APK
         run: |
@@ -143,6 +164,13 @@ jobs:
         with:
           node-version: 22
 
+      - name: Lyric format fixtures (must match the Android output)
+        run: |
+          New-Item -ItemType Directory -Force reports | Out-Null
+          $p = Start-Process -FilePath out/win/FoliaController.exe -ArgumentList '--fixture-test', (Resolve-Path tests/lyrics).Path, (Join-Path $PWD 'reports/fixtures.txt') -Wait -PassThru
+          Get-Content reports/fixtures.txt
+          if ($p.ExitCode -ne 0) { throw "lyric fixtures differ from the Android output" }
+
       - name: Smoke test (real server, fake player)
         run: |
           npm install --prefix windows/ci --no-audit --no-fund --silent playwright-core@1.48.2
@@ -154,7 +182,7 @@ jobs:
           node windows/ci/smoke.mjs 39999 2>&1 | Tee-Object -FilePath reports/smoke-results.txt
           $code = $LASTEXITCODE
           New-Item "$log.stop" -ItemType File | Out-Null
-          $server.WaitForExit(20000) | Out-Null
+          $server.WaitForExit(300000) | Out-Null
           Write-Host "---- smoke.log ----"
           Get-Content $log
           if ($code -ne 0) { exit $code }
@@ -193,21 +221,6 @@ jobs:
           path: reports/
           retention-days: 7
 
-      - name: Publish reports to the ci-reports branch
-        if: always()
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if (-not (Test-Path reports)) { exit 0 }
-          Set-Location reports
-          "run ${{ github.run_number }} · ${{ github.sha }} · $(Get-Date -Format o)" | Out-File -Encoding utf8 RUN.txt
-          git init -q -b ci-reports
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add -A
-          git commit -q -m "CI reports for build ${{ github.run_number }}"
-          git push -q --force "https://x-access-token:$env:TOKEN@github.com/${{ github.repository }}.git" ci-reports
-
       - name: Name the exe
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
@@ -217,6 +230,37 @@ jobs:
         with:
           name: windows
           path: dist/*.exe
+
+  # Test results and screenshots from both builds, on a branch so they can be read without the
+  # artifact storage (some networks can't reach it).
+  reports:
+    needs: [android, windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: windows-reports
+          path: reports/windows
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: android-reports
+          path: reports/android
+      - name: Publish to the ci-reports branch
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p reports
+          cd reports
+          echo "run ${{ github.run_number }} · ${{ github.sha }} · $(date -u +%FT%TZ) · android=${{ needs.android.result }} windows=${{ needs.windows.result }}" > RUN.txt
+          git init -q -b ci-reports
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "CI reports for build ${{ github.run_number }}"
+          git push -q --force "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git" ci-reports
 
   release:
     needs: [android, windows]
