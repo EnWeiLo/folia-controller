@@ -1,0 +1,530 @@
+// overlay.js — Folia 控制器's control bar and settings, drawn over Folia's Now Playing page.
+// Loaded as a classic script at the top of <head>, so the first part runs before Folia
+// (whose bundle is a deferred module) and can still see the real devicePixelRatio and set
+// the viewport. The UI is built once the DOM is ready.
+(function () {
+  'use strict';
+
+  // ---------- per-device display settings ----------
+  var store = {
+    get: function (key, fallback) {
+      try {
+        var raw = localStorage.getItem('fc.' + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch (e) { return fallback; }
+    },
+    set: function (key, value) {
+      try { localStorage.setItem('fc.' + key, JSON.stringify(value)); } catch (e) { /* private mode */ }
+    },
+  };
+
+  var webview = window.chrome && window.chrome.webview ? window.chrome.webview : null;
+  var isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+
+  var QUALITIES = [
+    { id: 'high', label: '高畫質', detail: '原生解析度', scale: 1 },
+    { id: 'balanced', label: '均衡', detail: '約 75% 解析度', scale: 0.75 },
+    { id: 'smooth', label: '流暢', detail: '約 60%，關閉幾何背景', scale: 0.6 },
+  ];
+  var MODES = [
+    ['classic', '流光'], ['cadenza', '心象'], ['partita', '雲階'], ['fume', '浮名'], ['monet', '莫奈'],
+    ['cappella', '群唱'], ['tilt', '傾訴'], ['claddagh', '回環'], ['diorama', '鏡台'], ['pendolo', '時計'],
+    ['sonnet', '商籟'], ['tempera', '凝彩'], ['lumiere', '繪光'], ['still', '靜止'],
+  ];
+  var OFFSETS = [-1000, -500, -250, 0, 250, 500, 750, 1000, 1500];
+
+  // Quality applies where we control how many pixels a CSS px is: the desktop window
+  // (through WebView2 zoom) and phones / tablets (through the viewport). A desktop
+  // browser always renders at its own zoom, so it gets no quality setting.
+  var qualityApplies = !!webview || isMobile;
+  function qualityId() {
+    var id = store.get('quality', webview ? 'high' : 'balanced');
+    for (var i = 0; i < QUALITIES.length; i++) if (QUALITIES[i].id === id) return id;
+    return 'balanced';
+  }
+  function qualityScale(id) {
+    for (var i = 0; i < QUALITIES.length; i++) if (QUALITIES[i].id === id) return QUALITIES[i].scale;
+    return 1;
+  }
+
+  // How many CSS px make one "real" px, for sizing our own UI.
+  var uiScale = 1;
+  var realDpr = window.devicePixelRatio || 1;
+
+  // Phones / tablets: lay the page out in physical pixels × quality, like the Android app,
+  // so Folia (designed for a 1080 / 1920 px canvas) renders sharp instead of upscaled.
+  if (isMobile && !webview) {
+    var r = qualityScale(qualityId());
+    var s = (1 / (realDpr * r)).toFixed(4);
+    var meta = document.createElement('meta');
+    meta.name = 'viewport';
+    meta.content = 'initial-scale=' + s + ', minimum-scale=' + s + ', maximum-scale=' + s +
+      ', user-scalable=no, viewport-fit=cover';
+    document.head.appendChild(meta);
+    uiScale = realDpr * r;
+  }
+
+  // ---------- helpers ----------
+  function $(id) { return document.getElementById(id); }
+  function fmt(ms) {
+    var t = Math.max(0, Math.floor((ms || 0) / 1000));
+    return Math.floor(t / 60) + ':' + ('0' + (t % 60)).slice(-2);
+  }
+  function post(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-FC': '1' },
+      body: JSON.stringify(body || {}),
+    }).catch(function () { /* the next state push will correct the UI */ });
+  }
+  function hostMessage(message) {
+    if (webview) webview.postMessage(message);
+  }
+  function reloadWithSettings() {
+    location.replace('/');
+  }
+
+  var ICONS = {
+    play: 'M8 5.14v13.72a1 1 0 0 0 1.52.85l10.98-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14z',
+    pause: 'M7 4.5h3.2a.8.8 0 0 1 .8.8v13.4a.8.8 0 0 1-.8.8H7a.8.8 0 0 1-.8-.8V5.3a.8.8 0 0 1 .8-.8zm6.8 0H17a.8.8 0 0 1 .8.8v13.4a.8.8 0 0 1-.8.8h-3.2a.8.8 0 0 1-.8-.8V5.3a.8.8 0 0 1 .8-.8z',
+    prev: 'M6.5 5a1 1 0 0 1 1 1v4.6l9.98-5.94A1 1 0 0 1 19 5.52v12.96a1 1 0 0 1-1.52.86L7.5 13.4V18a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1z',
+    next: 'M17.5 5a1 1 0 0 0-1 1v4.6L6.52 4.66A1 1 0 0 0 5 5.52v12.96a1 1 0 0 0 1.52.86l9.98-5.94V18a1 1 0 1 0 2 0V6a1 1 0 0 0-1-1z',
+    gear: 'M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.69-.98l-.38-2.65A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.49.49 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z',
+    expand: 'M4 9V5a1 1 0 0 1 1-1h4v2H6v3H4zm11-5h4a1 1 0 0 1 1 1v4h-2V6h-3V4zM4 15h2v3h3v2H5a1 1 0 0 1-1-1v-4zm14 0h2v4a1 1 0 0 1-1 1h-4v-2h3v-3z',
+    shrink: 'M7 4h2v4a1 1 0 0 1-1 1H4V7h3V4zm8 0h2v3h3v2h-4a1 1 0 0 1-1-1V4zM4 15h4a1 1 0 0 1 1 1v4H7v-3H4v-2zm12 0h4v2h-3v3h-2v-4a1 1 0 0 1 1-1z',
+    close: 'M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z',
+  };
+  function icon(name) {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + ICONS[name] + '"/></svg>';
+  }
+
+  // ---------- state from the computer ----------
+  var state = {
+    connected: false,     // our socket to the helper program
+    hasSession: false,    // a player is reporting to Windows
+    app: '', title: '', artist: '', playing: false,
+    positionMs: 0, durationMs: 0, canSeek: false, lyricStatus: '',
+    settings: { translation: true, traditional: true, offsetMs: 0 },
+    lan: { enabled: false, urls: [] },
+    receivedAt: 0,
+  };
+  var fullscreen = false;
+
+  function livePosition() {
+    var pos = state.positionMs;
+    if (state.playing) pos += performance.now() - state.receivedAt;
+    if (state.durationMs > 0) pos = Math.min(pos, state.durationMs);
+    return Math.max(0, pos);
+  }
+
+  // ---------- UI ----------
+  var root, bar, seek, seeking = false, panelOpen = false, hideTimer = 0;
+
+  function build() {
+    root = document.createElement('div');
+    root.id = 'fc-root';
+    root.innerHTML =
+      '<div id="fc-fps" aria-hidden="true"></div>' +
+      '<div id="fc-notice" role="status"></div>' +
+      '<div id="fc-bar">' +
+        '<div class="fc-info">' +
+          '<div id="fc-title"></div>' +
+          '<div id="fc-sub"></div>' +
+          '<div id="fc-lyric-status"></div>' +
+        '</div>' +
+        '<div class="fc-seek"><span id="fc-pos">0:00</span>' +
+          '<input id="fc-seekbar" type="range" min="0" max="1" step="250" value="0" aria-label="播放進度">' +
+          '<span id="fc-dur">0:00</span></div>' +
+        '<div class="fc-buttons">' +
+          '<button class="fc-btn fc-small" id="fc-settings" title="設定" aria-label="設定">' + icon('gear') + '</button>' +
+          '<span class="fc-gap"></span>' +
+          '<button class="fc-btn" id="fc-prev" title="上一首" aria-label="上一首">' + icon('prev') + '</button>' +
+          '<button class="fc-btn fc-big" id="fc-play" title="播放／暫停（空白鍵）" aria-label="播放">' + icon('play') + '</button>' +
+          '<button class="fc-btn" id="fc-next" title="下一首" aria-label="下一首">' + icon('next') + '</button>' +
+          '<span class="fc-gap"></span>' +
+          '<button class="fc-btn fc-small" id="fc-full" title="全螢幕（F11）" aria-label="全螢幕">' + icon('expand') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="fc-scrim"></div>' +
+      '<div id="fc-panel" role="dialog" aria-label="設定"></div>';
+    document.body.appendChild(root);
+    applyUiScale();
+
+    bar = $('fc-bar');
+    seek = $('fc-seekbar');
+    $('fc-play').onclick = function () {
+      state.playing = !state.playing; // optimistic
+      state.positionMs = livePosition();
+      state.receivedAt = performance.now();
+      render();
+      post('/api/control', { action: 'toggle' });
+    };
+    $('fc-prev').onclick = function () { post('/api/control', { action: 'prev' }); };
+    $('fc-next').onclick = function () { post('/api/control', { action: 'next' }); };
+    $('fc-full').onclick = toggleFullscreen;
+    $('fc-settings').onclick = function () { openPanel(!panelOpen); };
+    $('fc-scrim').onclick = function () { openPanel(false); };
+    $('fc-title').onclick = function () { hostMessage({ type: 'focusPlayer' }); };
+
+    seek.addEventListener('input', function () {
+      seeking = true;
+      $('fc-pos').textContent = fmt(Number(seek.value));
+      paintSeek();
+    });
+    seek.addEventListener('change', function () {
+      var target = Number(seek.value);
+      seeking = false;
+      state.positionMs = target;
+      state.receivedAt = performance.now();
+      post('/api/control', { action: 'seek', positionMs: Math.round(target) });
+      scheduleHide();
+    });
+
+    // Mouse: any movement shows the bar, which hides again after a few idle seconds.
+    // Touch: a tap toggles it (Folia's page itself needs no touch input).
+    document.addEventListener('pointermove', function (e) {
+      if (e.pointerType === 'mouse') show();
+    }, { passive: true });
+    document.addEventListener('pointerup', function (e) {
+      if (e.pointerType === 'mouse' || panelOpen) return;
+      if (bar.contains(e.target)) { scheduleHide(); return; }
+      if (root.classList.contains('fc-show')) hide(); else show();
+    });
+    document.addEventListener('dblclick', function (e) {
+      if (!bar.contains(e.target) && !$('fc-panel').contains(e.target)) toggleFullscreen();
+    });
+    bar.addEventListener('pointerenter', function () { clearTimeout(hideTimer); });
+    bar.addEventListener('pointerleave', function () { scheduleHide(); });
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('fullscreenchange', function () {
+      if (!webview) { fullscreen = !!document.fullscreenElement; render(); }
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') resync();
+    });
+
+    renderPanel();
+    render();
+    show();
+    setInterval(tick, 250);
+    if (store.get('fps', false)) startFps();
+  }
+
+  function applyUiScale() {
+    if (root) root.style.setProperty('--u', uiScale + 'px');
+  }
+
+  function show() {
+    root.classList.add('fc-show');
+    document.documentElement.classList.remove('fc-idle');
+    tick();
+    scheduleHide();
+  }
+  function hide() {
+    if (panelOpen || seeking) return;
+    root.classList.remove('fc-show');
+    document.documentElement.classList.add('fc-idle');
+    if (document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
+  }
+  function scheduleHide() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hide, 3000);
+  }
+
+  function onKey(e) {
+    var tag = (e.target && e.target.tagName) || '';
+    if (tag === 'SELECT' || tag === 'INPUT' && e.target.type !== 'range') return;
+    var handled = true;
+    switch (e.key) {
+      case ' ':
+      case 'MediaPlayPause':
+      case 'k':
+        $('fc-play').click();
+        break;
+      case 'ArrowLeft':
+      case 'ArrowRight':
+        if (!state.canSeek) { handled = false; break; }
+        var target = livePosition() + (e.key === 'ArrowLeft' ? -5000 : 5000);
+        if (state.durationMs > 0) target = Math.min(target, state.durationMs - 500);
+        state.positionMs = Math.max(0, target);
+        state.receivedAt = performance.now();
+        post('/api/control', { action: 'seek', positionMs: Math.round(state.positionMs) });
+        break;
+      case 'n':
+      case 'MediaTrackNext':
+        post('/api/control', { action: 'next' });
+        break;
+      case 'p':
+      case 'MediaTrackPrevious':
+        post('/api/control', { action: 'prev' });
+        break;
+      case 'f':
+      case 'F11':
+        toggleFullscreen();
+        break;
+      case 'Escape':
+        if (panelOpen) openPanel(false);
+        else if (fullscreen) toggleFullscreen();
+        else handled = false;
+        break;
+      default:
+        handled = false;
+    }
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
+      show();
+    }
+  }
+
+  function toggleFullscreen() {
+    if (webview) {
+      hostMessage({ type: 'fullscreen' });
+      return;
+    }
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(function () {});
+    }
+  }
+
+  function paintSeek() {
+    var max = Number(seek.max) || 1;
+    seek.style.setProperty('--pct', (100 * Number(seek.value) / max).toFixed(2) + '%');
+  }
+
+  function tick() {
+    if (!root || !root.classList.contains('fc-show') || seeking) return;
+    var pos = livePosition();
+    $('fc-pos').textContent = fmt(pos);
+    seek.value = String(Math.round(pos));
+    paintSeek();
+  }
+
+  function render() {
+    if (!root) return;
+    var notice = $('fc-notice');
+    if (!state.connected) {
+      notice.textContent = '連不到這台電腦上的 Folia 控制器小程式，重新連線中…';
+      notice.classList.add('fc-on');
+    } else {
+      notice.classList.remove('fc-on');
+    }
+
+    $('fc-title').textContent = state.hasSession && state.title ? state.title : '沒有正在播放的音樂';
+    var sub = [];
+    if (state.hasSession && state.artist) sub.push(state.artist);
+    if (state.hasSession && state.app) sub.push(state.app);
+    $('fc-sub').textContent = sub.length ? sub.join(' · ') : '在 Spotify、YouTube Music 等播放器播一首歌';
+    $('fc-lyric-status').textContent = state.lyricStatus || '';
+
+    var play = $('fc-play');
+    play.innerHTML = icon(state.playing ? 'pause' : 'play');
+    play.setAttribute('aria-label', state.playing ? '暫停' : '播放');
+    $('fc-full').innerHTML = icon(fullscreen ? 'shrink' : 'expand');
+    $('fc-full').setAttribute('aria-label', fullscreen ? '離開全螢幕' : '全螢幕');
+
+    seek.max = String(Math.max(1, state.durationMs));
+    seek.disabled = !state.canSeek || state.durationMs <= 0;
+    $('fc-dur').textContent = fmt(state.durationMs);
+    if (!seeking) tick();
+    if (panelOpen) syncPanel();
+  }
+
+  // ---------- settings panel ----------
+  function switchRow(id, label, note) {
+    return '<div class="fc-row"><label for="' + id + '">' + label + (note ? '<small>' + note + '</small>' : '') +
+      '</label><button class="fc-switch" id="' + id + '" role="switch" aria-checked="false"></button></div>';
+  }
+  function selectRow(id, label, options, note) {
+    var html = '<div class="fc-row"><label for="' + id + '">' + label + (note ? '<small>' + note + '</small>' : '') +
+      '</label><select id="' + id + '">';
+    for (var i = 0; i < options.length; i++) html += '<option value="' + options[i][0] + '">' + options[i][1] + '</option>';
+    return html + '</select></div>';
+  }
+
+  function renderPanel() {
+    var offsetOptions = OFFSETS.map(function (ms) {
+      return [String(ms), ms === 0 ? '0 ms（不調整）' : (ms > 0 ? '+' + ms + ' ms（歌詞晚一點）' : ms + ' ms（歌詞早一點）')];
+    });
+    var qualityOptions = QUALITIES.map(function (q) { return [q.id, q.label + '（' + q.detail + '）']; });
+    var panel = $('fc-panel');
+    panel.innerHTML =
+      '<div class="fc-panel-head"><h2>設定</h2><button class="fc-btn fc-small" id="fc-close" aria-label="關閉">' + icon('close') + '</button></div>' +
+      '<div class="fc-section">這台裝置的畫面</div>' +
+      selectRow('fc-mode', '歌詞動畫', MODES) +
+      (qualityApplies ? selectRow('fc-quality', '畫質', qualityOptions, '越低越流暢，歌詞文字依然清晰') : '') +
+      switchRow('fc-daylight', '日間主題') +
+      switchRow('fc-fps-toggle', '顯示 FPS', '左上角顯示每秒畫出幾幀') +
+      '<div class="fc-section">歌詞（所有裝置共用）</div>' +
+      switchRow('fc-translation', '顯示翻譯') +
+      switchRow('fc-traditional', '簡體歌詞轉繁體', '日文歌詞不會轉換') +
+      selectRow('fc-offset', '歌詞時間偏移', offsetOptions, '戴藍牙耳機時歌詞偏早，可以調成 +250～+500') +
+      '<div class="fc-section">其他裝置</div>' +
+      '<div class="fc-note" id="fc-lan"></div>' +
+      '<div class="fc-section">快捷鍵</div>' +
+      '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · F 或雙擊 全螢幕 · Esc 離開</div>';
+
+    $('fc-close').onclick = function () { openPanel(false); };
+    $('fc-mode').onchange = function () { store.set('mode', this.value); reloadWithSettings(); };
+    if (qualityApplies) {
+      $('fc-quality').onchange = function () {
+        var before = qualityId();
+        store.set('quality', this.value);
+        // The window applies resolution through zoom on the fly; phones need the viewport rebuilt,
+        // and 流暢's static mode is a page parameter, so those reload.
+        if (webview && before !== 'smooth' && this.value !== 'smooth') sendQuality();
+        else reloadWithSettings();
+      };
+    }
+    $('fc-daylight').onclick = function () { store.set('daylight', !store.get('daylight', false)); reloadWithSettings(); };
+    $('fc-fps-toggle').onclick = function () {
+      var on = !store.get('fps', false);
+      store.set('fps', on);
+      if (on) startFps(); else stopFps();
+      syncPanel();
+    };
+    $('fc-translation').onclick = function () { post('/api/settings', { translation: !state.settings.translation }); };
+    $('fc-traditional').onclick = function () { post('/api/settings', { traditional: !state.settings.traditional }); };
+    $('fc-offset').onchange = function () { post('/api/settings', { offsetMs: Number(this.value) }); };
+  }
+
+  function setSwitch(id, on) {
+    var el = $(id);
+    if (el) el.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+
+  function syncPanel() {
+    $('fc-mode').value = store.get('mode', 'classic');
+    if (qualityApplies) $('fc-quality').value = qualityId();
+    setSwitch('fc-daylight', store.get('daylight', false));
+    setSwitch('fc-fps-toggle', store.get('fps', false));
+    setSwitch('fc-translation', state.settings.translation);
+    setSwitch('fc-traditional', state.settings.traditional);
+    $('fc-offset').value = String(state.settings.offsetMs || 0);
+    var lan = $('fc-lan');
+    if (state.lan.enabled && state.lan.urls.length) {
+      lan.innerHTML = '同一個 Wi‑Fi 下的平板或手機，用瀏覽器打開：<br>' +
+        state.lan.urls.map(function (u) { return '<code>' + u + '</code>'; }).join('<br>');
+    } else if (state.lan.enabled) {
+      lan.textContent = '已允許區網連線，但找不到這台電腦的區網位址。';
+    } else {
+      lan.textContent = '想讓平板也顯示歌詞：在系統匣的 Folia 圖示按右鍵，勾選「允許區網裝置連線」。';
+    }
+  }
+
+  function openPanel(open) {
+    panelOpen = open;
+    root.classList.toggle('fc-panel-open', open);
+    if (open) {
+      syncPanel();
+      show();
+      clearTimeout(hideTimer);
+    } else {
+      scheduleHide();
+    }
+  }
+
+  // ---------- FPS readout ----------
+  var fpsRunning = false;
+  function startFps() {
+    if (fpsRunning) return;
+    fpsRunning = true;
+    var box = $('fc-fps');
+    box.classList.add('fc-on');
+    box.textContent = '— FPS';
+    var frames = 0, worst = 0, last = 0, windowStart = 0;
+    function frame(now) {
+      if (!fpsRunning) return;
+      if (last) worst = Math.max(worst, now - last); else windowStart = now;
+      last = now;
+      frames++;
+      var elapsed = now - windowStart;
+      if (elapsed >= 1000) {
+        var fps = Math.round((frames - 1) * 1000 / elapsed);
+        box.textContent = fps + ' FPS  最慢 ' + Math.round(worst) + 'ms';
+        box.style.color = worst <= 25 ? '#9eff9e' : worst <= 50 ? '#ffe08a' : '#ff8a8a';
+        frames = 1;
+        worst = 0;
+        windowStart = now;
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  function stopFps() {
+    fpsRunning = false;
+    $('fc-fps').classList.remove('fc-on');
+  }
+
+  // ---------- connection to the helper program ----------
+  var socket = null;
+  var retry = 0;
+  function connect() {
+    var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws/lyric';
+    try { socket = new WebSocket(url); } catch (e) { return scheduleReconnect(); }
+    socket.onopen = function () { retry = 0; state.connected = true; render(); };
+    socket.onmessage = function (event) {
+      var msg;
+      try { msg = JSON.parse(event.data); } catch (e) { return; }
+      if (!msg || msg.event !== 'ControllerState' || !msg.data) return;
+      var d = msg.data;
+      state.hasSession = !!d.hasSession;
+      state.app = d.app || '';
+      state.title = d.title || '';
+      state.artist = d.artist || '';
+      state.playing = !!d.playing;
+      state.positionMs = Number(d.positionMs) || 0;
+      state.durationMs = Number(d.durationMs) || 0;
+      state.canSeek = !!d.canSeek;
+      state.lyricStatus = d.lyricStatus || '';
+      if (d.settings) state.settings = d.settings;
+      if (d.lan) state.lan = d.lan;
+      state.receivedAt = performance.now();
+      render();
+    };
+    socket.onclose = function () {
+      socket = null;
+      state.connected = false;
+      render();
+      scheduleReconnect();
+    };
+    socket.onerror = function () { /* onclose follows */ };
+  }
+  function scheduleReconnect() {
+    retry = Math.min(retry + 1, 6);
+    setTimeout(connect, 500 * retry);
+  }
+  // After the page was frozen (window hidden to the tray) ask for a full state refresh.
+  function resync() {
+    if (socket && socket.readyState === 1) socket.send('{"type":"resync"}');
+  }
+
+  // ---------- desktop window ----------
+  function sendQuality() {
+    hostMessage({ type: 'quality', renderScale: qualityScale(qualityId()) });
+  }
+  if (webview) {
+    webview.addEventListener('message', function (event) {
+      var m = event.data || {};
+      if (m.type === 'host') {
+        if (typeof m.zoom === 'number' && m.zoom > 0) uiScale = 1 / m.zoom;
+        if (typeof m.fullscreen === 'boolean') fullscreen = m.fullscreen;
+        applyUiScale();
+        render();
+      } else if (m.type === 'resync') {
+        resync();
+      }
+    });
+    sendQuality();
+  }
+
+  function start() {
+    build();
+    connect();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();

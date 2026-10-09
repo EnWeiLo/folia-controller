@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Folia 控制器</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #09090b; color: #a1a1aa;
+    font: 15px/1.5 "Segoe UI", "Microsoft JhengHei UI", "PingFang TC", "Noto Sans TC", system-ui, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+<div id="msg">正在開啟 Folia…</div>
+<script>
+// "/" picks this device's display settings (stored per device) and opens Folia's
+// Now Playing page with them. Folia reads the events from this computer's
+// /api/ws/lyric, so `host` is simply wherever this page was loaded from.
+(function () {
+  var MODES = ['classic', 'cadenza', 'partita', 'fume', 'monet', 'cappella', 'tilt', 'claddagh',
+    'diorama', 'pendolo', 'sonnet', 'tempera', 'lumiere', 'still'];
+  function get(key, fallback) {
+    try {
+      var raw = localStorage.getItem('fc.' + key);
+      return raw == null ? fallback : JSON.parse(raw);
+    } catch (e) { return fallback; }
+  }
+  var mode = get('mode', 'classic');
+  if (MODES.indexOf(mode) < 0) mode = 'classic';
+  var query = 'obs=1&obsSource=now-playing&host=' + encodeURIComponent(location.host) +
+    '&visualizer=' + encodeURIComponent(mode);
+  if (get('daylight', false)) query += '&daylight=1';
+  // 流暢 quality also turns on Folia's static mode (no geometric background).
+  if (get('quality', '') === 'smooth') query += '&cfg=' + encodeURIComponent('{"stm":true}');
+  location.replace('/?' + query);
+})();
+</script>
+</body>
+</html>

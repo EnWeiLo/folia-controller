@@ -8,3 +8,9 @@ local.properties
 /out/
 # Folia's web build is fetched and copied in by CI.
 app/src/main/assets/folia/
+# Windows app
+windows/FoliaController.Windows/bin/
+windows/FoliaController.Windows/obj/
+windows/FoliaController.Windows/folia.zip
+windows/ci/node_modules/
+windows/ci/package*.json

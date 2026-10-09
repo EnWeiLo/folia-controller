@@ -1,0 +1,226 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      folia_ref:
+        description: "Folia (chthollyphile/folia-major) commit, branch or tag to bundle"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+env:
+  # Pinned to the Folia version this app was written against. Run the workflow manually with
+  # folia_ref = main to try the newest Folia.
+  DEFAULT_FOLIA_REF: 43e7846d196f4c92a69f7806fe00be664ec84ef9
+
+jobs:
+  # Folia's web build, shared by the Android app and the Windows app.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Fetch Folia source
+        env:
+          FOLIA_REF: ${{ github.event.inputs.folia_ref }}
+        run: |
+          REF="${FOLIA_REF:-$DEFAULT_FOLIA_REF}"
+          echo "Bundling Folia at $REF"
+          git init -q folia-src
+          cd folia-src
+          git remote add origin https://github.com/chthollyphile/folia-major.git
+          git fetch -q --depth 1 origin "$REF"
+          git checkout -q --detach FETCH_HEAD
+          git log -1 --format='%H %ci %s'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: folia-src/package-lock.json
+
+      - name: Build Folia web bundle
+        working-directory: folia-src
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: |
+          npm ci --no-audit --no-fund
+          npx vite build
+          test -f dist/index.html
+
+      - name: Zip the bundle
+        run: |
+          cd folia-src/dist
+          # Service workers are not used by either app.
+          rm -f sw.js registerSW.js workbox-*.js folia-cover-sw.js
+          zip -qr ../../folia.zip .
+          cd ../..
+          echo "folia.zip: $(du -h folia.zip | cut -f1), $(unzip -l folia.zip | tail -1)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: folia-web
+          path: folia.zip
+          retention-days: 3
+
+  android:
+    needs: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: folia-web
+
+      - name: Put the bundle into the app's assets
+        run: |
+          ASSETS=app/src/main/assets/folia
+          rm -rf "$ASSETS"
+          mkdir -p "$ASSETS"
+          unzip -q folia.zip -d "$ASSETS"
+          echo "Bundle: $(du -sh "$ASSETS" | cut -f1), files: $(find "$ASSETS" -type f | wc -l)"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Build APK
+        run: gradle --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Name the APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/FoliaController-${{ github.run_number }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*.apk
+
+  windows:
+    needs: web
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: folia-web
+          path: windows/FoliaController.Windows
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build the exe
+        run: |
+          dotnet publish windows/FoliaController.Windows/FoliaController.Windows.csproj -c Release -o out/win `
+            -p:Version=1.0.${{ github.run_number }} -nologo
+          Get-ChildItem out/win | Format-Table Name, Length
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Smoke test (real server, fake player)
+        run: |
+          npm install --prefix windows/ci --no-audit --no-fund --silent playwright-core@1.48.2
+          $log = Join-Path $PWD 'smoke.log'
+          $server = Start-Process -FilePath out/win/FoliaController.exe -ArgumentList '--smoke-test', '39999', $log -PassThru
+          # Screenshots first (state is untouched), then the protocol checks.
+          node windows/ci/screenshots.mjs 39999 screenshots
+          node windows/ci/smoke.mjs 39999
+          $code = $LASTEXITCODE
+          New-Item "$log.stop" -ItemType File | Out-Null
+          $server.WaitForExit(20000) | Out-Null
+          Write-Host "---- smoke.log ----"
+          Get-Content $log
+          if ($code -ne 0) { exit $code }
+
+      - name: Start the real app (tray, then a second launch opens the window)
+        run: |
+          $exe = (Resolve-Path out/win/FoliaController.exe).Path
+          $app = Start-Process -FilePath $exe -ArgumentList '--tray' -PassThru
+          Start-Sleep -Seconds 8
+          if ($app.HasExited) { throw "app exited right after start (code $($app.ExitCode))" }
+          Start-Process -FilePath $exe
+          Start-Sleep -Seconds 15
+          if ($app.HasExited) { throw "app exited after opening its window (code $($app.ExitCode))" }
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            New-Item -ItemType Directory -Force screenshots | Out-Null
+            $bitmap.Save("screenshots/window.png")
+          } catch { Write-Host "screen capture unavailable: $_" }
+          Write-Host "state: $((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:39863/api/state).Content)"
+          $errors = Join-Path $env:LOCALAPPDATA 'FoliaController\error.log'
+          if (Test-Path $errors) { Write-Host "---- error.log ----"; Get-Content $errors }
+          Stop-Process -Id $app.Id -Force
+          if ((Test-Path $errors) -and (Select-String -Path $errors -Pattern 'FATAL' -Quiet)) { throw "fatal error logged" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-screenshots
+          path: screenshots/
+          retention-days: 7
+
+      - name: Name the exe
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item out/win/FoliaController.exe "dist/FoliaController-${{ github.run_number }}.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.exe
+
+  release:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: out
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: out
+      - run: ls -la out
+
+      # One release per build, so the files download straight from a phone or PC browser.
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Folia 控制器 build ${{ github.run_number }}
+          body: |
+            自動建置。
+            - **Android**：手機打開此頁，下載 `.apk` 安裝（會覆蓋舊版）。
+            - **Windows**：下載 `.exe` 直接執行，不用安裝。第一次執行若出現 SmartScreen，按「其他資訊 → 仍要執行」。
+          files: out/*
+          make_latest: true

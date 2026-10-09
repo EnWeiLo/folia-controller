@@ -1,6 +1,6 @@
-# Folia 控制器（Android）
+# Folia 控制器（Android ＋ Windows）
 
-把 [Folia](https://github.com/chthollyphile/folia-major) 的全螢幕動態歌詞放到手機或平板上，**本身不播放音樂**。
+把 [Folia](https://github.com/chthollyphile/folia-major) 的全螢幕動態歌詞放到手機、平板或電腦上，**本身不播放音樂**。
 你照常用 Spotify、YouTube Music 或任何播放器聽歌，這個 App 會：
 
 - 讀取正在播放的歌曲、封面和進度（透過 Android 的媒體工作階段）
@@ -8,14 +8,25 @@
 - 用 Folia 的歌詞動畫全螢幕顯示，跟著播放器同步
 - 提供控制列：上一首、播放／暫停、下一首、拖曳進度條
 
-## 建置（不需要 Android Studio）
+## Windows 版
+
+下載 Releases 裡的 `FoliaController-<編號>.exe`，直接執行，不用安裝。第一次執行如果出現 SmartScreen，按「其他資訊 → 仍要執行」。
+
+- **打開就是 Folia 視窗**：讀取 Windows 的媒體播放資訊（音量面板裡那個），支援 Spotify 桌面版、Chrome／Edge 裡的 YouTube Music，以及大部分播放器。
+- **滑鼠移動**顯示控制列，閒置 3 秒自動隱藏。快捷鍵：空白鍵播放／暫停、← → 倒轉／快轉 5 秒、N／P 下一首／上一首、F、F11 或雙擊切換全螢幕、Esc 離開。
+- **關掉視窗**會退到系統匣繼續執行，點系統匣圖示就能再打開。右鍵選單有：在瀏覽器開啟、允許區網裝置連線、複製區網網址、開機時自動啟動、結束。
+- **給平板用**：勾選「允許區網裝置連線」後，同一個 Wi‑Fi 下的平板或手機用瀏覽器打開選單裡的網址（例如 `http://192.168.1.23:39863/`），就能顯示電腦正在播的歌詞，也能遙控。Windows 跳出防火牆詢問時，請允許「私人網路」。
+- **設定**（控制列左邊的齒輪）：歌詞動畫、畫質、日間主題、顯示 FPS 是每台裝置各自設定；翻譯、簡轉繁、時間偏移是所有裝置共用。
+- 視窗用的是 Windows 內建的 Edge 引擎（WebView2），Windows 10／11 都已內建。設定和紀錄存在 `%LOCALAPPDATA%\FoliaController`。
+
+## 建置（不需要 Android Studio 或 Visual Studio）
 
 1. 在 GitHub 建一個新的 repo（可以設為 Private），把這個資料夾的內容全部上傳。
-2. 上傳後，GitHub Actions 會自動執行 **Build APK**，約 8–12 分鐘。
-3. 完成後到 repo 的 **Releases**，下載 `FoliaController-<編號>.apk`。用手機瀏覽器直接開 Releases 頁面就能下載。
+2. 上傳後，GitHub Actions 會自動執行 **Build**，約 10–15 分鐘：先打包 Folia 網頁，再同時建置 APK 和 Windows exe。Windows 版還會在雲端實際啟動，用模擬播放器檢查網頁、WebSocket 和播放控制，並截圖（在該次執行的 `windows-screenshots` 附件裡）。
+3. 完成後到 repo 的 **Releases**，下載 `.apk` 或 `.exe`。
 
 之後只要修改並推送程式碼，就會產生新版。每一版都用同一把簽章，可以直接覆蓋安裝。
-想換成最新版的 Folia，可以到 **Actions → Build APK → Run workflow**，把 `folia_ref` 填成 `main`。
+想換成最新版的 Folia，可以到 **Actions → Build → Run workflow**，把 `folia_ref` 填成 `main`。
 
 ## 第一次使用
 
@@ -61,6 +72,18 @@ Folia 原本就有一個給 OBS 用的「Now Playing」模式，它只顯示歌�
 | `FoliaAssetServer.kt` | 在 `https://appassets.androidplatform.net/` 提供 Folia 網頁，並注入橋接腳本和 viewport 設定 |
 | `MainActivity.kt` | 全螢幕 WebView、控制列、權限說明畫面、設定 |
 | `assets/folia-bridge.js` | 把 Folia 的 Now Playing WebSocket 換成原生橋接 |
+
+Windows 版（`windows/FoliaController.Windows`，C# / .NET 8）不需要橋接：小程式本身就是一個本機網頁伺服器，直接提供 Folia 要連的 `/api/ws/lyric` WebSocket。
+
+| 檔案 | 用途 |
+| --- | --- |
+| `MediaSources.cs` | 讀取 Windows 媒體工作階段（SMTC）：歌曲、封面、進度與播放控制 |
+| `MediaHub.cs` | 找歌詞、產生 Folia 的事件、時間校正（和 Android 版相同規則） |
+| `LyricRepository.cs` | 網易雲／LRCLIB 歌詞搜尋，以及用 Windows 內建功能做繁簡轉換 |
+| `WebServer.cs` | 小型 HTTP ＋ WebSocket 伺服器；只接受 IP 或 localhost，擋下其他網站的請求 |
+| `MainForm.cs` | WebView2 視窗、全螢幕、依螢幕縮放調整清晰度 |
+| `TrayContext.cs` | 系統匣圖示與選單、區網開關、開機啟動 |
+| `web/overlay.js`、`overlay.css` | 疊在 Folia 上的控制列與設定面板（電腦視窗和平板瀏覽器共用） |
 
 ## 授權
 
