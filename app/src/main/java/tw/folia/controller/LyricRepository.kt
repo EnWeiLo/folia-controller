@@ -524,6 +524,31 @@ object LyricRepository {
 
     private fun arr(body: String?): JSONArray? = body?.let { runCatching { JSONArray(it) }.getOrNull() }
 
+    /** For the CI report: status and start of the raw responses from QQ search and AMLL. */
+    fun diagnostics(): String {
+        fun probe(url: String, method: String, body: String?, headers: Map<String, String>): String = try {
+            val c = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 6000
+                readTimeout = 10_000
+                headers.forEach { (k, v) -> setRequestProperty(k, v) }
+                if (body != null) {
+                    doOutput = true
+                    outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                }
+            }
+            val code = c.responseCode
+            val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            "HTTP $code ${text.take(160).replace('\n', ' ')}"
+        } catch (e: Exception) {
+            "ERROR $e"
+        }
+        val qqBody = """{"comm":{"ct":11,"cv":"1003006","v":"1003006","tmeAppID":"qqmusiclight","uid":"0"},"request":{"method":"DoSearchForQQMusicLite","module":"music.search.SearchCgiService","param":{"query":"YOASOBI","search_type":0,"num_per_page":2,"page_num":1}}}"""
+        return "  qq search: " + probe("https://u.y.qq.com/cgi-bin/musicu.fcg", "POST", qqBody, QQ_HEADERS) + "\n" +
+            "  amll spotify: " + probe("https://amll-ttml-db.stevexmh.net/spotify/0VjIjW4GlUZAMYd2vXMi3b?format=ttml", "GET", null, mapOf("User-Agent" to APP_UA)) + "\n" +
+            "  amll ncm: " + probe("https://amll-ttml-db.stevexmh.net/ncm/1409311773?format=ttml", "GET", null, mapOf("User-Agent" to APP_UA)) + "\n"
+    }
+
     private fun httpGet(url: String, headers: Map<String, String>, timeoutMs: Int = 10_000): String? = http(url, "GET", null, headers, timeoutMs)
 
     private fun httpPost(url: String, body: String, headers: Map<String, String>): String? = http(url, "POST", body, headers, 10_000)

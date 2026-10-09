@@ -22,6 +22,10 @@ internal static class SmokeTest
     public static async Task<string> LiveReportAsync()
     {
         var report = new System.Text.StringBuilder("== live lyric search (Windows) ==\n");
+        using (var diag = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+        {
+            report.Append("raw responses:\n").Append(await LyricRepository.DiagnosticsAsync(diag.Token));
+        }
         foreach (var song in LiveSongs)
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));

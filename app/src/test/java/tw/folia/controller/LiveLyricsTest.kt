@@ -24,6 +24,7 @@ class LiveLyricsTest {
     fun liveSearchReport() {
         if (System.getenv("LIVE_LYRICS") != "1") return
         val report = StringBuilder("== live lyric search (Android code on JVM) ==\n")
+        report.append("raw responses:\n").append(LyricRepository.diagnostics())
         for (song in songs) {
             try {
                 val (result, candidates) = LyricRepository.find(song)

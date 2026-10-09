@@ -641,6 +641,31 @@ internal static class LyricRepository
         try { return JsonNode.Parse(body); } catch (JsonException) { return null; }
     }
 
+    /// <summary>For the CI report: status and start of the raw responses from QQ search and AMLL.</summary>
+    public static async Task<string> DiagnosticsAsync(CancellationToken ct)
+    {
+        async Task<string> Probe(HttpRequestMessage request, (string, string)[] headers)
+        {
+            try
+            {
+                foreach (var (name, value) in headers) request.Headers.TryAddWithoutValidation(name, value);
+                using var response = await Http.SendAsync(request, ct);
+                var text = await response.Content.ReadAsStringAsync(ct);
+                return $"HTTP {(int)response.StatusCode} {text[..Math.Min(160, text.Length)].Replace('\n', ' ')}";
+            }
+            catch (Exception ex)
+            {
+                return "ERROR " + ex.GetType().Name + " " + ex.Message;
+            }
+        }
+        const string qqBody = """{"comm":{"ct":11,"cv":"1003006","v":"1003006","tmeAppID":"qqmusiclight","uid":"0"},"request":{"method":"DoSearchForQQMusicLite","module":"music.search.SearchCgiService","param":{"query":"YOASOBI","search_type":0,"num_per_page":2,"page_num":1}}}""";
+        var qqContent = new StringContent(qqBody, Encoding.UTF8);
+        qqContent.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        var qq = await Probe(new HttpRequestMessage(HttpMethod.Post, "https://u.y.qq.com/cgi-bin/musicu.fcg") { Content = qqContent }, QqHeaders);
+        var amll = await Probe(new HttpRequestMessage(HttpMethod.Get, "https://amll-ttml-db.stevexmh.net/ncm/1409311773?format=ttml"), AppHeaders);
+        return $"  qq search: {qq}\n  amll ncm: {amll}\n";
+    }
+
     private static async Task<string?> GetAsync(string url, (string, string)[] headers, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
