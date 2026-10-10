@@ -319,6 +319,28 @@
     root.classList.toggle('fc-show', open);
     if (!open && document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
     if (open) tick();
+    updateInset();
+  }
+
+  // Folia pins its subtitle line (translation / romaji) to the bottom of the screen, under the card.
+  // While the card is open, lift that line above it. Folia sets `bottom` as an inline style from its
+  // animation library; a stylesheet rule with !important wins over it.
+  var insetStyle = null;
+  function updateInset() {
+    if (!insetStyle) {
+      insetStyle = document.createElement('style');
+      insetStyle.textContent =
+        'html.fc-inset div.absolute.left-0.right-0.text-center.z-20.pointer-events-none[style*="bottom"]' +
+        '{bottom:var(--fc-inset)!important;transition:bottom .3s ease}';
+      document.head.appendChild(insetStyle);
+    }
+    var html = document.documentElement;
+    if (!cardOpen || !bar) { html.classList.remove('fc-inset'); return; }
+    // The card's resting place (its transform animates in from a little lower).
+    var cs = getComputedStyle(bar);
+    var inset = parseFloat(cs.bottom) + bar.offsetHeight + 12 * uiScale;
+    html.style.setProperty('--fc-inset', Math.round(inset) + 'px');
+    html.classList.add('fc-inset');
   }
   // Only the mouse pointer hides itself when idle; the card stays.
   function wake() {
@@ -332,6 +354,7 @@
   function layoutCard() {
     if (!root) return;
     root.classList.toggle('fc-narrow', window.innerWidth / uiScale < 760);
+    updateInset();
   }
 
   function onKey(e) {
@@ -446,6 +469,7 @@
     $('fc-dur').textContent = fmt(state.durationMs);
     if (!seeking) tick();
     if (panelOpen) syncPanel();
+    updateInset();
   }
 
   // ---------- settings panel ----------

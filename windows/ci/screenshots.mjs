@@ -48,6 +48,15 @@ await shoot('tablet', {
 }, async (page) => {
   // The info card shows from the start (a tap would hide it); give the lyrics time to arrive.
   await page.waitForTimeout(12000);
+  // Folia's bottom subtitle line should sit above the card.
+  const info = await page.evaluate(() => {
+    const el = document.querySelector('div.absolute.left-0.right-0.text-center.z-20.pointer-events-none[style*="bottom"]');
+    const bar = document.getElementById('fc-bar').getBoundingClientRect();
+    const sub = el && el.getBoundingClientRect();
+    return { found: !!el, subtitleBottomEdge: sub && Math.round(sub.bottom), cardTop: Math.round(bar.top),
+      inset: getComputedStyle(document.documentElement).getPropertyValue('--fc-inset') };
+  });
+  console.log('tablet subtitle vs card: ' + JSON.stringify(info));
 });
 
 await browser.close();

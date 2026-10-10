@@ -275,6 +275,9 @@ class MainActivity : Activity() {
         card = buildCard()
         root.addView(card)
         arrangeCard()
+        card.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) updateFoliaInset()
+        }
 
         permissionPanel = buildPermissionPanel().apply { elevation = dpf(24f) }
         root.addView(permissionPanel, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -838,8 +841,20 @@ class MainActivity : Activity() {
         return String.format(Locale.US, "%d:%02d", total / 60, total % 60)
     }
 
+    /** Lifts Folia's bottom subtitle line above the card while the card is open (see folia-bridge.js). */
+    private fun updateFoliaInset() {
+        val cssPx = if (controlsVisible && card.height > 0) {
+            val margin = (card.layoutParams as? FrameLayout.LayoutParams)?.bottomMargin ?: 0
+            (card.height + margin + dp(12)) * currentQuality().renderScale
+        } else 0f
+        webView.evaluateJavascript(
+            "window.__fcSetBottomInset&&window.__fcSetBottomInset(${String.format(Locale.US, "%.1f", cssPx)})", null,
+        )
+    }
+
     private fun setControlsVisible(visible: Boolean) {
         controlsVisible = visible
+        updateFoliaInset()
         card.animate().cancel()
         if (visible) {
             card.visibility = View.VISIBLE
@@ -1182,7 +1197,10 @@ class MainActivity : Activity() {
     inner class JsBridge {
         @JavascriptInterface
         fun requestSnapshot() {
-            handler.post { MediaHub.pushSnapshot() }
+            handler.post {
+                MediaHub.pushSnapshot()
+                updateFoliaInset()
+            }
         }
     }
 }

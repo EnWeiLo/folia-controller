@@ -82,5 +82,28 @@
       socket._emit('message', new MessageEvent('message', { data: json }));
     }
   };
+  // Folia pins its subtitle line (translation / romaji) to the bottom of the screen, where our
+  // info card sits. While the card is open, lift that line above it. Folia sets `bottom` as an
+  // inline style from its animation library; a stylesheet rule with !important wins over it.
+  window.__fcSetBottomInset = function (px) {
+    var id = 'fc-bottom-inset';
+    var style = document.getElementById(id);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = id;
+      style.textContent =
+        'html.fc-inset div.absolute.left-0.right-0.text-center.z-20.pointer-events-none[style*="bottom"]' +
+        '{bottom:var(--fc-inset)!important;transition:bottom .3s ease}';
+      (document.head || document.documentElement).appendChild(style);
+    }
+    var root = document.documentElement;
+    if (px > 0) {
+      root.style.setProperty('--fc-inset', Math.round(px) + 'px');
+      root.classList.add('fc-inset');
+    } else {
+      root.classList.remove('fc-inset');
+    }
+  };
+
   window.__FOLIA_ANDROID_CONTROLLER__ = true;
 })();
