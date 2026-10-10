@@ -6,6 +6,7 @@ APK_DIR=$1
 OUT=$2
 PKG=tw.folia.controller
 mkdir -p "$OUT"
+exec > >(tee "$OUT/script.log") 2>&1
 
 adb install -r "$APK_DIR"/*.apk
 # Skip Android's one-time "Viewing full screen" hint, which would cover the screenshots.
@@ -65,5 +66,6 @@ adb shell wm size reset
 adb shell wm density reset
 
 adb logcat -d -b crash > "$OUT/crash.txt" 2>&1 || true
+adb logcat -d -s ActivityTaskManager:* ActivityManager:* AndroidRuntime:* WindowManager:W > "$OUT/activity.txt" 2>&1 || true
 adb logcat -d -s AndroidRuntime:E chromium:E > "$OUT/errors.txt" 2>&1 || true
 echo "crash log lines: $(wc -l < "$OUT/crash.txt")"
