@@ -8,12 +8,20 @@ PKG=tw.folia.controller
 mkdir -p "$OUT"
 
 adb install -r "$APK_DIR"/*.apk
+# Skip Android's one-time "Viewing full screen" hint, which would cover the screenshots.
+adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 
 launch() {
   adb shell am force-stop "$PKG"
-  adb shell am start -W -n "$PKG/.MainActivity" "$@" >/dev/null
+  sleep 1
+  adb shell am start -W -n "$PKG/.MainActivity" "$@"
+  for _ in $(seq 1 30); do
+    if adb shell dumpsys activity activities | grep -q "topResumedActivity.*$PKG"; then return; fi
+    sleep 1
+  done
+  echo "app is not in front:"; adb shell dumpsys activity activities | grep -i resumed | head -5
 }
 shot() {
   adb exec-out screencap -p > "$OUT/$1.png"

@@ -276,7 +276,7 @@ class MainActivity : Activity() {
         root.addView(card)
         arrangeCard()
 
-        permissionPanel = buildPermissionPanel()
+        permissionPanel = buildPermissionPanel().apply { elevation = dpf(24f) }
         root.addView(permissionPanel, FrameLayout.LayoutParams(MATCH, MATCH))
         return root
     }
@@ -678,6 +678,7 @@ class MainActivity : Activity() {
         })
 
         val scroll = ScrollView(this).apply {
+            elevation = dpf(24f) // above the info card, which has its own elevation
             isFillViewport = true
             setBackgroundColor(0xF00B0B0F.toInt())
             isClickable = true

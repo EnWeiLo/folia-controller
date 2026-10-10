@@ -230,7 +230,7 @@ internal sealed class DesktopLyricsRenderer : IDisposable
         {
             var family = FamilyFor(frame.Sub);
             DrawText(g, frame.Sub, family, FontStyle.Regular, SubEm, cx, mainTop + MainHeight + SubEm * 0.1f, maxWidth,
-                Color.FromArgb(225, 255, 255, 255), null, null, 0, 0.16f);
+                Color.FromArgb(230, 255, 255, 255), null, null, 0, 0.12f);
         }
     }
 
@@ -247,7 +247,7 @@ internal sealed class DesktopLyricsRenderer : IDisposable
         using var path = new GraphicsPath();
         path.AddString(text, family, (int)style, em, new PointF(left, top), _format);
 
-        using (var shadow = new Pen(Color.FromArgb(60, 0, 0, 0), em * (strokeRatio + 0.1f)) { LineJoin = LineJoin.Round })
+        using (var shadow = new Pen(Color.FromArgb(45, 0, 0, 0), em * (strokeRatio + 0.07f)) { LineJoin = LineJoin.Round })
         {
             g.DrawPath(shadow, path);
         }

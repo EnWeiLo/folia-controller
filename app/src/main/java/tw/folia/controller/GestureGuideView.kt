@@ -1,12 +1,11 @@
 package tw.folia.controller
 
-import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.SystemClock
 import android.view.View
-import android.view.animation.LinearInterpolator
 import kotlin.math.max
 import kotlin.math.min
 
@@ -30,26 +29,10 @@ class GestureGuideView(context: Context, private val kind: Kind, private val acc
     }
     private val rect = RectF()
     private var t = 0f
+    private val loopMs = if (kind == Kind.LONG_PRESS) 2000L else 1600L
 
-    private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-        duration = if (kind == Kind.LONG_PRESS) 2000 else 1600
-        repeatCount = ValueAnimator.INFINITE
-        interpolator = LinearInterpolator()
-        addUpdateListener {
-            t = it.animatedValue as Float
-            invalidate()
-        }
-    }
-
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        animator.start()
-    }
-
-    override fun onDetachedFromWindow() {
-        animator.cancel()
-        super.onDetachedFromWindow()
-    }
+    // Driven by the clock rather than an Animator, so it still plays when the phone's
+    // "animation speed" / "remove animations" setting is off.
 
     private fun ease(x: Float): Float {
         val c = x.coerceIn(0f, 1f)
@@ -60,6 +43,8 @@ class GestureGuideView(context: Context, private val kind: Kind, private val acc
     private fun phase(from: Float, to: Float) = ((t - from) / (to - from)).coerceIn(0f, 1f)
 
     override fun onDraw(canvas: Canvas) {
+        t = (SystemClock.uptimeMillis() % loopMs) / loopMs.toFloat()
+        if (isAttachedToWindow) postInvalidateOnAnimation()
         val w = width.toFloat()
         val h = height.toFloat()
         rect.set(0f, 0f, w, h)

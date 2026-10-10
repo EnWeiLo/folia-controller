@@ -46,8 +46,8 @@ await shoot('tablet', {
   viewport: { width: 1024, height: 640 }, deviceScaleFactor: 2.5, isMobile: true, hasTouch: true,
   userAgent: 'Mozilla/5.0 (Linux; Android 15; Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
 }, async (page) => {
-  await page.touchscreen.tap(500, 200);
-  await page.waitForTimeout(600);
+  // The info card shows from the start (a tap would hide it); give the lyrics time to arrive.
+  await page.waitForTimeout(12000);
 });
 
 await browser.close();
