@@ -179,6 +179,16 @@ jobs:
           $errors = Join-Path $env:LOCALAPPDATA 'FoliaController\error.log'
           if (Test-Path $errors) { Get-Content $errors }
 
+      - name: Desktop lyrics window on the real desktop
+        run: |
+          $png = Join-Path $PWD 'reports/desktop-lyrics-window.png'
+          $log = Join-Path $PWD 'reports/desktop-lyrics-window.txt'
+          $p = Start-Process -FilePath out/win/FoliaController.exe -ArgumentList '--desktop-lyrics-test', $png, $log -Wait -PassThru
+          Get-Content $log
+          $errors = Join-Path $env:LOCALAPPDATA 'FoliaController\error.log'
+          if (Test-Path $errors) { Write-Host "---- error.log ----"; Get-Content $errors }
+          if ($p.ExitCode -ne 0) { throw "the desktop lyrics window drew nothing (code $($p.ExitCode))" }
+
       - name: Smoke test (real server, fake player)
         run: |
           npm install --prefix windows/ci --no-audit --no-fund --silent playwright-core@1.48.2

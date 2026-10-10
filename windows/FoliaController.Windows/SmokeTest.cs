@@ -227,6 +227,53 @@ internal static class SmokeTest
         }
     }
 
+    /// <summary>
+    /// `--desktop-lyrics-test &lt;png&gt; &lt;log&gt;`: opens the real desktop lyrics window with a fake player for
+    /// 20 seconds, then photographs that part of the screen. Fails if nothing was drawn.
+    /// </summary>
+    public static int DesktopLyricsCheck(string pngPath, string logPath)
+    {
+        ApplicationConfiguration.Initialize();
+        var settings = new AppSettings { Persist = false };
+        LyricChoices.Persist = false;
+        var source = new FakeSource();
+        var hub = new MediaHub(source, settings);
+        var log = new System.Text.StringBuilder();
+        var exit = 1;
+        using var form = new DesktopLyricsForm(hub, settings);
+        var timer = new System.Windows.Forms.Timer { Interval = 20000 };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            try
+            {
+                var b = form.Bounds;
+                log.AppendLine($"bounds={b} visible={form.Visible} frames={form.PresentCount} error={form.LastError ?? "none"} hiddenForFullscreen={form.HiddenForFullscreen}");
+                log.AppendLine($"text={form.CurrentText ?? "(none)"}");
+                var area = Rectangle.Inflate(b, 30, 30);
+                using var shot = new Bitmap(area.Width, area.Height);
+                using (var g = Graphics.FromImage(shot))
+                {
+                    g.CopyFromScreen(area.Location, Point.Empty, area.Size, CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
+                }
+                shot.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png);
+                exit = form.LastError == null && form.PresentCount > 0 && form.CurrentText != null ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine("ERROR " + ex);
+            }
+            File.WriteAllText(logPath, log.ToString());
+            form.Close();
+            Application.ExitThread();
+        };
+        _ = source.StartAsync();
+        form.Show();
+        timer.Start();
+        Application.Run();
+        return exit;
+    }
+
     public static async Task<int> RunAsync(string[] args)
     {
         var port = args.Length > 1 && int.TryParse(args[1], out var p) ? p : 39999;

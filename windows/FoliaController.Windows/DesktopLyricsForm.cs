@@ -46,6 +46,12 @@ internal sealed class DesktopLyricsForm : Form
     private Bitmap? _surface;
     private Size _surfaceSize;
 
+    /// <summary>For the CI check: the first drawing error, and how many frames reached the screen.</summary>
+    public string? LastError { get; private set; }
+    public int PresentCount { get; private set; }
+    public string? CurrentText => _current == null ? null : _current.Main + (_current.Sub.Length > 0 ? " / " + _current.Sub : "");
+    public bool HiddenForFullscreen => _hiddenForFullscreen;
+
     /// <summary>The lock button was pressed (the tray shows how to unlock).</summary>
     public event Action? LockedByUser;
     /// <summary>The close button was pressed.</summary>
@@ -301,7 +307,7 @@ internal sealed class DesktopLyricsForm : Form
         FreeSurface();
         var info = new BITMAPINFO
         {
-            biSize = Marshal.SizeOf<BITMAPINFO>(),
+            biSize = 40, // sizeof(BITMAPINFOHEADER); the whole struct (44) makes CreateDIBSection fail
             biWidth = size.Width,
             biHeight = -size.Height, // top-down
             biPlanes = 1,
@@ -311,6 +317,15 @@ internal sealed class DesktopLyricsForm : Form
         _memDc = CreateCompatibleDC(screenDc);
         ReleaseDC(IntPtr.Zero, screenDc);
         _dib = CreateDIBSection(_memDc, ref info, 0, out _bits, IntPtr.Zero, 0);
+        if (_dib == IntPtr.Zero || _bits == IntPtr.Zero)
+        {
+            LastError = $"CreateDIBSection failed ({Marshal.GetLastWin32Error()}) for {size.Width}x{size.Height}";
+            CrashLog.Write(new InvalidOperationException(LastError), fatal: false);
+            DeleteDC(_memDc);
+            _memDc = IntPtr.Zero;
+            _dib = IntPtr.Zero;
+            return;
+        }
         _oldBitmap = SelectObject(_memDc, _dib);
         // GDI+ draws straight into the DIB, premultiplied, which is what UpdateLayeredWindow wants.
         _surface = new Bitmap(size.Width, size.Height, size.Width * 4, PixelFormat.Format32bppPArgb, _bits);
@@ -341,8 +356,15 @@ internal sealed class DesktopLyricsForm : Form
         var destination = new POINT { x = Left, y = Top };
         var blend = new BLENDFUNCTION { BlendOp = 0, BlendFlags = 0, SourceConstantAlpha = 255, AlphaFormat = 1 };
         var screenDc = GetDC(IntPtr.Zero);
-        UpdateLayeredWindow(Handle, screenDc, ref destination, ref size, _memDc, ref source, 0, ref blend, 2);
+        var ok = UpdateLayeredWindow(Handle, screenDc, ref destination, ref size, _memDc, ref source, 0, ref blend, 2);
+        var error = ok ? 0 : Marshal.GetLastWin32Error();
         ReleaseDC(IntPtr.Zero, screenDc);
+        PresentCount++;
+        if (!ok && LastError == null)
+        {
+            LastError = $"UpdateLayeredWindow failed ({error})";
+            CrashLog.Write(new InvalidOperationException(LastError), fatal: false);
+        }
     }
 
     protected override void OnLocationChanged(EventArgs e)
