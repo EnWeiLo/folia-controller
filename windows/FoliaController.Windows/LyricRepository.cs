@@ -108,7 +108,11 @@ internal static class LyricRepository
     private static readonly Regex VersionLatin = new("(?<![a-z])(live|remix|mix|acoustic|instrumental|inst|karaoke|off vocal|cover|demo|ver|version|sped up|slowed)(?![a-z])", RegexOptions.Compiled);
     private static readonly Regex VersionCjk = new("伴奏|纯音乐|純音樂|现场|現場|翻唱|カラオケ|ライブ", RegexOptions.Compiled);
     // QQ's server wants the request JSON with the text itself, not \u escapes.
-    private static readonly System.Text.Json.JsonSerializerOptions RawJson = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    private static readonly System.Text.Json.JsonSerializerOptions RawJson = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver(),
+    };
 
     private static readonly object CacheGate = new();
     private static readonly Dictionary<string, (LyricResult? Result, List<LyricCandidate> Candidates)> Cache = new();

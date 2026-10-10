@@ -341,7 +341,8 @@ internal static class SmokeTest
             var hub = new MediaHub(source, settings);
             using var server = new WebServer(assets, hub);
             hub.Broadcast = server.Broadcast;
-            hub.LanInfo = () => (false, Array.Empty<string>());
+            // A LAN address list, so the control state carries a JSON array (it once broke serialisation).
+            hub.LanInfo = () => (true, new[] { "http://192.168.0.2:39863/" });
             server.Start(port, lan: false);
             await log.WriteLineAsync($"listening on {server.Port}");
             await source.StartAsync();

@@ -12,7 +12,13 @@ namespace FoliaController;
 /// </summary>
 internal sealed class MediaHub
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    // An explicit resolver: without one, writing JSON arrays (the LAN address list) threw
+    // "JsonSerializerOptions instance must specify a TypeInfoResolver" in the published exe.
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver(),
+    };
     private const long DriftThresholdMs = 150;
     private const long SeekJumpMs = 1200;
 
@@ -663,7 +669,7 @@ internal sealed class MediaHub
         var snap = _snap;
         var (lanEnabled, urls) = LanInfo();
         var urlArray = new JsonArray();
-        foreach (var url in urls) urlArray.Add(url);
+        foreach (var url in urls) urlArray.Add(JsonValue.Create(url));
         var data = new JsonObject
         {
             ["hasSession"] = snap != null,

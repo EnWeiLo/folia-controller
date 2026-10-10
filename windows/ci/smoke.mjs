@@ -87,6 +87,7 @@ if (cover) {
 const state = lastOf('ControllerState');
 console.log('lyric status:', state?.lyricStatus);
 check(state?.album === '葉惠美', 'album in control state', JSON.stringify(state?.album));
+check(state?.lan?.urls?.[0] === 'http://192.168.0.2:39863/', 'LAN address list in control state', JSON.stringify(state?.lan));
 check(typeof state?.cover === 'string' && /^\/api\/cover\/[0-9a-f]{20}$/.test(state.cover), 'cover in control state, addressed by its fingerprint', JSON.stringify(state?.cover));
 const lyric = lastOf('Lyric');
 const container = lyric?.lrc || '';
