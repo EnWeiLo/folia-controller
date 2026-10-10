@@ -45,7 +45,7 @@ class FoliaAssetServer(
     private val tuningScripts: String by lazy {
         fun asset(name: String) = context.assets.open(name).bufferedReader().use { it.readText() }
         "<style>${asset("fc-tuning.css")}</style><script>${asset("fc-tuning-schema.js")}</script>" +
-            "<script>${asset("fc-tuning.js")}</script>"
+            "<script>${asset("fc-tuning.js")}</script><script>${asset("fc-audio.js")}</script>"
     }
     private val fpsScript: String by lazy {
         context.assets.open("folia-fps.js").bufferedReader().use { it.readText() }

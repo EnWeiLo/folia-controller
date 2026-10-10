@@ -83,7 +83,8 @@ internal sealed class DesktopLyricsForm : Form
         {
             var cp = base.CreateParams;
             cp.ExStyle |= WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
-            if (_settings.DesktopLyricsLocked) cp.ExStyle |= WS_EX_TRANSPARENT;
+            // Form's own constructor asks for CreateParams before ours has run, so _settings can be null here.
+            if (_settings?.DesktopLyricsLocked == true) cp.ExStyle |= WS_EX_TRANSPARENT;
             return cp;
         }
     }

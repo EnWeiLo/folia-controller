@@ -81,6 +81,7 @@ class MainActivity : Activity() {
         )
         private val OFFSETS = longArrayOf(-1000, -500, -250, 0, 250, 500, 750, 1000, 1500)
         private const val REQUEST_LYRICS_FOLDER = 41
+        private const val REQUEST_AUDIO = 42
     }
 
     private lateinit var prefs: SharedPreferences
@@ -112,6 +113,9 @@ class MainActivity : Activity() {
     private var appliedCover: Bitmap? = null
 
     private val handler = Handler(Looper.getMainLooper())
+    private val audio = AudioReactive { b64, playing ->
+        webView.evaluateJavascript("window.__fcAudioFrame&&__fcAudioFrame('$b64',${if (playing) 1 else 0})", null)
+    }
     /** The info card stays until a tap hides it (no auto-hide). */
     private var controlsVisible = true
     private var userSeeking = false
@@ -190,10 +194,12 @@ class MainActivity : Activity() {
         (getSystemService(DISPLAY_SERVICE) as DisplayManager).registerDisplayListener(displayListener, handler)
         updatePermissionState()
         handler.post(progressTicker)
+        startAudioIfWanted()
     }
 
     override fun onPause() {
         resumed = false
+        audio.stop()
         handler.removeCallbacks(progressTicker)
         (getSystemService(DISPLAY_SERVICE) as DisplayManager).unregisterDisplayListener(displayListener)
         webView.onPause()
@@ -608,6 +614,50 @@ class MainActivity : Activity() {
                 feedback.animate().alpha(0f).setStartDelay(450).setDuration(260)
                     .withEndAction { feedback.visibility = View.GONE }.start()
             }.start()
+    }
+
+    // ---------- 跟著音樂律動 ----------
+
+    private fun hasAudioPermission() =
+        checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    private fun startAudioIfWanted() {
+        if (!prefs.getBoolean("audio_reactive", false) || !hasAudioPermission() || audio.running) return
+        val error = audio.start()
+        if (error != null) {
+            android.widget.Toast.makeText(this, "這台裝置不讓 App 讀取正在播放的聲音（$error）", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun toggleAudio() {
+        if (prefs.getBoolean("audio_reactive", false)) {
+            prefs.edit().putBoolean("audio_reactive", false).apply()
+            audio.stop()
+            return
+        }
+        if (hasAudioPermission()) {
+            prefs.edit().putBoolean("audio_reactive", true).apply()
+            startAudioIfWanted()
+            return
+        }
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("跟著音樂律動")
+            .setMessage("讓有律動效果的歌詞動畫跟著節奏動。\n\nAndroid 把「讀取正在播放的聲音頻譜」歸在「錄音」權限底下，所以需要你允許。App 只讀取頻譜的強弱，不會錄音、存檔或上傳。")
+            .setPositiveButton("繼續") { _, _ -> requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO) }
+            .setNegativeButton("取消", null)
+            .setOnDismissListener { enterImmersive() }
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_AUDIO) return
+        if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            prefs.edit().putBoolean("audio_reactive", true).apply()
+            startAudioIfWanted()
+        } else {
+            android.widget.Toast.makeText(this, "沒有權限，動畫不會跟著音樂律動", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ---------- 動畫與外觀 panel (fc-tuning.js, inside the WebView) ----------
@@ -1133,6 +1183,7 @@ class MainActivity : Activity() {
             "保持螢幕常亮：${onOff("keep_screen_on", true)}",
             "本機歌詞資料夾：${LocalLyrics.folderLabel ?: "未設定"}",
             "動畫與外觀細節（字型、背景、各動畫細部設定）",
+            "跟著音樂律動：${onOff("audio_reactive", false)}",
             "手勢說明",
             "重新載入畫面",
         )
@@ -1151,8 +1202,9 @@ class MainActivity : Activity() {
                     8 -> { toggle("keep_screen_on", true); applyKeepScreenOn(); showSettings() }
                     9 -> pickLyricsFolder()
                     10 -> openTuning()
-                    11 -> showGestureTutorial()
-                    12 -> loadFolia()
+                    11 -> toggleAudio()
+                    12 -> showGestureTutorial()
+                    13 -> loadFolia()
                 }
             }
             .setOnDismissListener { enterImmersive() }

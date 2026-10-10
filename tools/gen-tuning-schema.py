@@ -43,9 +43,9 @@ CADENZA = {
 
 # No effect on the page our apps show (see notes in folia-schema.json).
 SKIP_FIELDS = {'dynamicOnlyInPlayer'}
-# Folia receives no audio in our apps, so audio-driven options do nothing (for now).
+# Audio-driven options only work with 跟著音樂律動 (fc-audio.js) on.
 AUDIO_WORDS = ('音訊', '音樂', '節拍', '頻譜')
-AUDIO_HINT = '需要聲音資料；目前收不到聲音，這項沒有效果'
+AUDIO_HINT = '要先在設定打開「跟著音樂律動」才有效果'
 
 
 def field(f):
