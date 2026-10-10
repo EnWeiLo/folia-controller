@@ -12,7 +12,7 @@
 </style>
 </head>
 <body>
-<div id="msg">正在開啟 Folia…</div>
+<div id="msg">正在開啟…</div>
 <script>
 // "/" picks this device's display settings (stored per device) and opens Folia's
 // Now Playing page with them. Folia reads the events from this computer's
@@ -26,15 +26,25 @@
       return raw == null ? fallback : JSON.parse(raw);
     } catch (e) { return fallback; }
   }
-  var mode = get('mode', 'classic');
+  // Flowrics' own effects live on /fx.html (shared/web).
+  var FX = ['dive', 'minimal', 'karaoke', 'cinema', 'ink', 'ripple', 'stardust', 'neon', 'vinyl', 'comic', 'terminal',
+    'danmaku', 'led', 'boom', 'meteor', 'glitch', 'vortex', 'fireworks', 'jelly', 'warp', 'shatter'];
+  var SUBTITLES = ['translation', 'romanization', 'both', 'none'];
+  var subtitle = get('subtitle', 'translation');
+  var mode = get('mode', 'fx:dive');
+  if (typeof mode === 'string' && mode.indexOf('fx:') === 0) {
+    var fx = mode.slice(3);
+    if (FX.indexOf(fx) < 0) fx = 'dive';
+    location.replace('/fx.html?fx=' + fx + '&host=' + encodeURIComponent(location.host) + '&cfg=' +
+      encodeURIComponent(JSON.stringify({ subtitleContentMode: SUBTITLES.indexOf(subtitle) >= 0 ? subtitle : 'translation' })));
+    return;
+  }
   if (MODES.indexOf(mode) < 0) mode = 'classic';
   var query = 'obs=1&obsSource=now-playing&host=' + encodeURIComponent(location.host) +
     '&visualizer=' + encodeURIComponent(mode);
   if (get('daylight', false)) query += '&daylight=1';
   // Folia appearance overrides: the subtitle line under the lyrics, and 流暢 quality's static
   // mode (no geometric background).
-  var SUBTITLES = ['translation', 'romanization', 'both', 'none'];
-  var subtitle = get('subtitle', 'translation');
   var cfg = { subtitleContentMode: SUBTITLES.indexOf(subtitle) >= 0 ? subtitle : 'translation' };
   if (get('quality', '') === 'smooth') cfg.staticMode = true;
   query += '&cfg=' + encodeURIComponent(JSON.stringify(cfg));

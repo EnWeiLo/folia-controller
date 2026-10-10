@@ -14,11 +14,16 @@ const browser = await chromium.launch({
 });
 const errors = [];
 
-async function shoot(name, options, actions) {
+async function shoot(name, options, actions, mode = 'classic') {
   const context = await browser.newContext(options);
+  // Which animation the launcher opens (per device, in localStorage); Folia's unless a test says otherwise.
+  await context.addInitScript((m) => {
+    try { if (!localStorage.getItem('fc.mode')) localStorage.setItem('fc.mode', JSON.stringify(m)); } catch (e) { /* */ }
+  }, mode);
   try {
     const page = await context.newPage();
     page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
+    page.on('console', (m) => { if (m.type() === 'error' && /flowrics/.test(m.text())) errors.push(`${name}: ${m.text()}`); });
     await page.goto(`http://127.0.0.1:${port}/`);
     await page.waitForTimeout(9000);
     await actions(page);
@@ -87,6 +92,23 @@ await shoot('tuning-panel', { viewport: { width: 1600, height: 900 } }, async (p
   await page.evaluate(() => window.FcTuning.open({ u: 1 }));
   await page.waitForTimeout(500);
 });
+
+// Flowrics' own effects (/fx.html): the launcher must route there and the effect must draw.
+for (const [fx, opts] of [
+  ['dive', { viewport: { width: 1600, height: 900 } }],
+  ['boom', { viewport: { width: 1600, height: 900 } }],
+  ['fireworks', { viewport: { width: 1600, height: 900 } }],
+  ['vinyl', { viewport: { width: 1024, height: 640 }, deviceScaleFactor: 2.5, isMobile: true, hasTouch: true,
+    userAgent: 'Mozilla/5.0 (Linux; Android 15; Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36' }],
+]) {
+  await shoot('fx-' + fx, opts, async (page) => {
+    await page.waitForTimeout(3000);
+    const info = await page.evaluate(() => ({ path: location.pathname, effect: window.Flowrics && Flowrics.S.fxId,
+      lines: window.Flowrics ? Flowrics.S.lines.length : -1, title: window.Flowrics && Flowrics.S.title }));
+    console.log(`fx-${fx}: ` + JSON.stringify(info));
+    if (info.path !== '/fx.html' || info.effect !== fx) errors.push(`fx-${fx}: did not open the effect page`);
+  }, 'fx:' + fx);
+}
 
 await browser.close();
 console.log(errors.length ? 'page errors:\n' + errors.join('\n') : 'no page errors');

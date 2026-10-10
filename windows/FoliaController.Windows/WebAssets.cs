@@ -13,6 +13,8 @@ internal sealed class WebAssets
 
     public byte[] IndexHtml { get; private set; } = Array.Empty<byte>();
     public byte[] LauncherHtml { get; private set; } = Array.Empty<byte>();
+    /// <summary>Flowrics' own lyric effects page (shared/web/fx.html) with the control bar added.</summary>
+    public byte[] FxHtml { get; private set; } = Array.Empty<byte>();
     public byte[] AppIcon { get; private set; } = Array.Empty<byte>();
     public int FoliaFileCount => _folia.Count;
 
@@ -47,6 +49,9 @@ internal sealed class WebAssets
         }
 
         assets.LauncherHtml = assets._web.TryGetValue("launcher.html", out var launcher) ? launcher : Encoding.UTF8.GetBytes("missing launcher");
+        assets.FxHtml = Encoding.UTF8.GetBytes(PrepareFx(assets._web.TryGetValue("fx.html", out var fx)
+            ? Encoding.UTF8.GetString(fx)
+            : "<!doctype html><meta charset=utf-8><body style='background:#000;color:#eee'>missing fx.html"));
         assets.IndexHtml = assets._folia.TryGetValue("index.html", out var index)
             ? Encoding.UTF8.GetBytes(PrepareIndex(Encoding.UTF8.GetString(index)))
             : Encoding.UTF8.GetBytes(
@@ -71,6 +76,17 @@ internal sealed class WebAssets
             "<script src=\"/__fc/fc-tuning-schema.js\"></script><script src=\"/__fc/fc-tuning.js\"></script>" +
             "<script src=\"/__fc/fc-audio.js\"></script>" +
             "<script src=\"/__fc/overlay.js\"></script>";
+        return head.Success ? html.Insert(head.Index + head.Length, injection) : injection + html;
+    }
+
+    /// <summary>fx.html with its scripts pointed at /__fc/ and the control bar and audio feed added.</summary>
+    private static string PrepareFx(string html)
+    {
+        html = html.Replace("src=\"flowrics-", "src=\"/__fc/flowrics-", StringComparison.Ordinal);
+        html = Regex.Replace(html, @"<meta\s+name=[""']viewport[""'][^>]*>", "", RegexOptions.IgnoreCase);
+        var head = Regex.Match(html, @"<head[^>]*>", RegexOptions.IgnoreCase);
+        const string injection = "<link rel=\"stylesheet\" href=\"/__fc/overlay.css\">" +
+            "<script src=\"/__fc/fc-audio.js\"></script><script src=\"/__fc/overlay.js\"></script>";
         return head.Success ? html.Insert(head.Index + head.Length, injection) : injection + html;
     }
 

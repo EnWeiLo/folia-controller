@@ -27,11 +27,23 @@
     { id: 'balanced', label: '均衡', detail: '約 75% 解析度', scale: 0.75 },
     { id: 'smooth', label: '流暢', detail: '約 60%，關閉幾何背景', scale: 0.6 },
   ];
+  // Flowrics' own effects (fx.html) first, then Folia's animations. ['', label] starts a group.
   var MODES = [
+    ['', '流詞特效'],
+    ['fx:dive', '潛入'], ['fx:minimal', '極簡'], ['fx:karaoke', '卡拉OK'], ['fx:cinema', '電影字幕'], ['fx:ink', '墨染'],
+    ['fx:ripple', '液面'], ['fx:stardust', '星塵'], ['fx:neon', '霓虹'], ['fx:vinyl', '黑膠'], ['fx:comic', '漫畫對白'],
+    ['fx:terminal', '終端'], ['fx:danmaku', '彈幕'], ['fx:led', 'LED 看板'],
+    ['', '誇張特效'],
+    ['fx:boom', '爆破'], ['fx:meteor', '隕石'], ['fx:glitch', '故障'], ['fx:vortex', '漩渦'], ['fx:fireworks', '煙火'],
+    ['fx:jelly', '果凍'], ['fx:warp', '曲速'], ['fx:shatter', '碎玻璃'],
+    ['', '更多動畫（Folia）'],
     ['classic', '流光'], ['cadenza', '心象'], ['partita', '雲階'], ['fume', '浮名'], ['monet', '莫奈'],
     ['cappella', '群唱'], ['tilt', '傾訴'], ['claddagh', '回環'], ['diorama', '鏡台'], ['pendolo', '時計'],
     ['sonnet', '商籟'], ['tempera', '凝彩'], ['lumiere', '繪光'], ['still', '靜止'],
   ];
+  var DEFAULT_MODE = 'fx:dive';
+  // On Flowrics' own effect page there is no Folia to tune.
+  var isFx = location.pathname === '/fx.html';
   var OFFSETS = [-1000, -500, -250, 0, 250, 500, 750, 1000, 1500];
   // Folia's subtitle line under the lyrics (subtitleContentMode), chosen per device.
   var SUBTITLES = [['translation', '中文翻譯'], ['romanization', '羅馬拼音'], ['both', '翻譯＋羅馬拼音'], ['none', '不顯示']];
@@ -494,7 +506,17 @@
   function selectRow(id, label, options, note) {
     var html = '<div class="fc-row"><label for="' + id + '">' + label + (note ? '<small>' + note + '</small>' : '') +
       '</label><select id="' + id + '">';
-    for (var i = 0; i < options.length; i++) html += '<option value="' + options[i][0] + '">' + options[i][1] + '</option>';
+    var group = false;
+    for (var i = 0; i < options.length; i++) {
+      if (options[i][0] === '') {
+        if (group) html += '</optgroup>';
+        html += '<optgroup label="' + options[i][1] + '">';
+        group = true;
+      } else {
+        html += '<option value="' + options[i][0] + '">' + options[i][1] + '</option>';
+      }
+    }
+    if (group) html += '</optgroup>';
     return html + '</select></div>';
   }
 
@@ -508,10 +530,10 @@
       '<div class="fc-panel-head"><h2>設定</h2><button class="fc-btn fc-small" id="fc-close" aria-label="關閉">' + icon('close') + '</button></div>' +
       '<div class="fc-section">這台裝置的畫面</div>' +
       selectRow('fc-mode', '歌詞動畫', MODES) +
-      '<div class="fc-row"><label>動畫與外觀細節<small id="fc-tuning-note">每種動畫的細部設定、字型、副歌詞區、背景</small></label>' +
-        '<button class="fc-text-btn" id="fc-tuning-open">調整…</button></div>' +
+      (isFx ? '' : '<div class="fc-row"><label>動畫與外觀細節<small id="fc-tuning-note">每種動畫的細部設定、字型、副歌詞區、背景</small></label>' +
+        '<button class="fc-text-btn" id="fc-tuning-open">調整…</button></div>') +
       (qualityApplies ? selectRow('fc-quality', '畫質', qualityOptions, '越低越流暢，歌詞文字依然清晰') : '') +
-      switchRow('fc-daylight', '日間主題') +
+      (isFx ? '' : switchRow('fc-daylight', '日間主題')) +
       switchRow('fc-fps-toggle', '顯示 FPS', '左上角顯示每秒畫出幾幀') +
       selectRow('fc-subtitle', '副歌詞', SUBTITLES, '歌詞下方那一行：翻譯或羅馬拼音') +
       '<div class="fc-section">音樂律動（所有裝置共用）</div>' +
@@ -525,7 +547,7 @@
       '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · L 換歌詞' + (webview ? ' · D 桌面歌詞' : '') + ' · F 或雙擊 全螢幕 · 點一下歌詞 收起／打開資訊卡 · Esc 離開</div>';
 
     $('fc-close').onclick = function () { openPanel(false); };
-    $('fc-tuning-open').onclick = openTuning;
+    if (!isFx) $('fc-tuning-open').onclick = openTuning;
     $('fc-mode').onchange = function () { store.set('mode', this.value); reloadWithSettings(); };
     if (qualityApplies) {
       $('fc-quality').onchange = function () {
@@ -537,7 +559,7 @@
         else reloadWithSettings();
       };
     }
-    $('fc-daylight').onclick = function () { store.set('daylight', !store.get('daylight', false)); reloadWithSettings(); };
+    if (!isFx) $('fc-daylight').onclick = function () { store.set('daylight', !store.get('daylight', false)); reloadWithSettings(); };
     $('fc-fps-toggle').onclick = function () {
       var on = !store.get('fps', false);
       store.set('fps', on);
@@ -556,11 +578,11 @@
   }
 
   function syncPanel() {
-    $('fc-mode').value = store.get('mode', 'classic');
+    $('fc-mode').value = store.get('mode', DEFAULT_MODE);
     var changed = window.FcTuning ? window.FcTuning.changedCount() : 0;
-    $('fc-tuning-note').textContent = changed ? '已調整 ' + changed + ' 項（每種動畫的細部設定、字型、副歌詞區、背景）' : '每種動畫的細部設定、字型、副歌詞區、背景';
+    if (!isFx) $('fc-tuning-note').textContent = changed ? '已調整 ' + changed + ' 項（每種動畫的細部設定、字型、副歌詞區、背景）' : '每種動畫的細部設定、字型、副歌詞區、背景';
     if (qualityApplies) $('fc-quality').value = qualityId();
-    setSwitch('fc-daylight', store.get('daylight', false));
+    if (!isFx) setSwitch('fc-daylight', store.get('daylight', false));
     setSwitch('fc-fps-toggle', store.get('fps', false));
     $('fc-subtitle').value = store.get('subtitle', 'translation');
     setSwitch('fc-traditional', state.settings.traditional);

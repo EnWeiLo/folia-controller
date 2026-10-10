@@ -50,7 +50,10 @@ if (mainScript) {
   check(js.ok && (js.headers.get('content-type') || '').startsWith('text/javascript'), 'Folia bundle served', `${js.status} ${js.headers.get('content-type')}`);
   check((js.headers.get('cache-control') || '').includes('immutable'), 'hashed assets cached');
 }
-for (const f of ['overlay.js', 'overlay.css', 'launcher.html']) {
+const fxPage = await fetch(base + '/fx.html?fx=dive&host=127.0.0.1:' + port);
+const fxText = await fxPage.text();
+check(fxPage.ok && fxText.includes('/__fc/flowrics-engine.js') && fxText.includes('/__fc/overlay.js'), 'Flowrics effect page with control bar');
+for (const f of ['overlay.js', 'overlay.css', 'launcher.html', 'flowrics-engine.js', 'flowrics-fx.js', 'flowrics-fx-wild.js']) {
   const r = await fetch(base + '/__fc/' + f);
   check(r.ok, `/__fc/${f}`);
 }

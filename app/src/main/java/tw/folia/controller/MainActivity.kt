@@ -69,6 +69,22 @@ class MainActivity : Activity() {
             Mode("pendolo", "時計"), Mode("sonnet", "商籟"), Mode("tempera", "凝彩"),
             Mode("lumiere", "繪光"), Mode("still", "靜止"),
         )
+        // Flowrics' own effects (shared/web/flowrics-fx*.js); ids are "fx:<effect>".
+        private val FX_MODES = listOf(
+            Mode("fx:dive", "潛入"), Mode("fx:minimal", "極簡"), Mode("fx:karaoke", "卡拉OK"),
+            Mode("fx:cinema", "電影字幕"), Mode("fx:ink", "墨染"), Mode("fx:ripple", "液面"),
+            Mode("fx:stardust", "星塵"), Mode("fx:neon", "霓虹"), Mode("fx:vinyl", "黑膠"),
+            Mode("fx:comic", "漫畫對白"), Mode("fx:terminal", "終端"), Mode("fx:danmaku", "彈幕"),
+            Mode("fx:led", "LED 看板"),
+        )
+        private val WILD_MODES = listOf(
+            Mode("fx:boom", "爆破"), Mode("fx:meteor", "隕石"), Mode("fx:glitch", "故障"),
+            Mode("fx:vortex", "漩渦"), Mode("fx:fireworks", "煙火"), Mode("fx:jelly", "果凍"),
+            Mode("fx:warp", "曲速"), Mode("fx:shatter", "碎玻璃"),
+        )
+        private const val DEFAULT_MODE = "fx:dive"
+        private fun modeLabel(id: String?): String =
+            (FX_MODES + WILD_MODES + MODES).firstOrNull { it.id == id }?.label ?: (id ?: "")
         private val QUALITIES = listOf(
             Quality("high", "高畫質", "原生解析度，最清晰也最吃效能", 1f, false),
             Quality("balanced", "均衡", "約 75% 解析度，文字依然清晰", 0.75f, false),
@@ -844,7 +860,18 @@ class MainActivity : Activity() {
     // ---------- behaviour ----------
 
     private fun loadFolia() {
-        val mode = prefs.getString("mode", "classic") ?: "classic"
+        // CI screenshots pick an effect for one run without touching the saved setting.
+        val demoMode = if (MediaHub.demo) intent.getStringExtra("mode") else null
+        val mode = demoMode ?: prefs.getString("mode", DEFAULT_MODE) ?: DEFAULT_MODE
+        if (mode.startsWith("fx:")) {
+            // Flowrics' own effect page; it reads the same feed and the 副歌詞 setting.
+            val cfg = JSONObject().put("subtitleContentMode", subtitleMode())
+            webView.loadUrl(
+                FoliaAssetServer.ORIGIN + "/fx.html?fx=" + Uri.encode(mode.removePrefix("fx:")) +
+                    "&host=android-bridge&cfg=" + Uri.encode(cfg.toString()),
+            )
+            return
+        }
         val url = buildString {
             append(FoliaAssetServer.ORIGIN).append("/?obs=1&obsSource=now-playing&host=android-bridge")
             append("&visualizer=").append(Uri.encode(mode))
@@ -1168,8 +1195,9 @@ class MainActivity : Activity() {
     private fun onOff(key: String, default: Boolean) = if (prefs.getBoolean(key, default)) "開" else "關"
 
     private fun showSettings() {
-        val mode = prefs.getString("mode", "classic")
-        val modeLabel = MODES.firstOrNull { it.id == mode }?.label ?: mode
+        val mode = prefs.getString("mode", DEFAULT_MODE)
+        val modeLabel = modeLabel(mode)
+        val isFx = mode?.startsWith("fx:") == true
         val offset = prefs.getLong("offset", 0L)
         val items = arrayOf(
             "歌詞動畫：$modeLabel",
@@ -1182,7 +1210,7 @@ class MainActivity : Activity() {
             "歌詞時間偏移：${if (offset > 0) "+" else ""}${offset} ms",
             "保持螢幕常亮：${onOff("keep_screen_on", true)}",
             "本機歌詞資料夾：${LocalLyrics.folderLabel ?: "未設定"}",
-            "動畫與外觀細節（字型、背景、各動畫細部設定）",
+            if (isFx) "動畫與外觀細節（Folia 動畫專用）" else "動畫與外觀細節（字型、背景、各動畫細部設定）",
             "跟著音樂律動：${onOff("audio_reactive", false)}",
             "手勢說明",
             "重新載入畫面",
@@ -1201,7 +1229,10 @@ class MainActivity : Activity() {
                     7 -> pickOffset()
                     8 -> { toggle("keep_screen_on", true); applyKeepScreenOn(); showSettings() }
                     9 -> pickLyricsFolder()
-                    10 -> openTuning()
+                    10 -> if (isFx) {
+                        android.widget.Toast.makeText(this, "這是 Folia 動畫的細節設定，流詞特效不需要調整", android.widget.Toast.LENGTH_LONG).show()
+                        showSettings()
+                    } else openTuning()
                     11 -> toggleAudio()
                     12 -> showGestureTutorial()
                     13 -> loadFolia()
@@ -1216,14 +1247,33 @@ class MainActivity : Activity() {
     }
 
     private fun pickMode() {
-        val current = MODES.indexOfFirst { it.id == prefs.getString("mode", "classic") }.coerceAtLeast(0)
+        val current = prefs.getString("mode", DEFAULT_MODE)
+        val groups = listOf(
+            Triple("流詞特效", "流詞自己的動態歌詞", FX_MODES),
+            Triple("誇張特效", "爆炸、隕石、故障…好玩為主", WILD_MODES),
+            Triple("更多動畫（Folia）", "Folia 原本內建的動畫", MODES),
+        )
+        val labels = groups.map { (name, desc, list) ->
+            val mark = if (list.any { it.id == current }) "　● ${modeLabel(current)}" else ""
+            "$name$mark\n$desc"
+        }
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("歌詞動畫")
-            .setSingleChoiceItems(MODES.map { "${it.label}（${it.id}）" }.toTypedArray(), current) { dialog, which ->
-                prefs.edit().putString("mode", MODES[which].id).apply()
+            .setItems(labels.toTypedArray()) { _, which -> pickModeIn(groups[which].first, groups[which].third) }
+            .setOnDismissListener { enterImmersive() }
+            .show()
+    }
+
+    private fun pickModeIn(title: String, list: List<Mode>) {
+        val current = list.indexOfFirst { it.id == prefs.getString("mode", DEFAULT_MODE) }
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle(title)
+            .setSingleChoiceItems(list.map { it.label }.toTypedArray(), current) { dialog, which ->
+                prefs.edit().putString("mode", list[which].id).apply()
                 dialog.dismiss()
                 loadFolia()
             }
+            .setNegativeButton("返回") { _, _ -> pickMode() }
             .setOnDismissListener { enterImmersive() }
             .show()
     }

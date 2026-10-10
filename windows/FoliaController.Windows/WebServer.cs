@@ -301,6 +301,7 @@ internal sealed class WebServer : IDisposable
             var isFolia = request.Query.Split('&').Contains("obs=1");
             return (200, "text/html; charset=utf-8", isFolia ? _assets.IndexHtml : _assets.LauncherHtml, NoCache);
         }
+        if (path == "/fx.html") return (200, "text/html; charset=utf-8", _assets.FxHtml, NoCache);
         if (path == "/api/state") return Json(_hub.ControllerStateJson());
         if (path == "/api/lyrics/candidates")
         {

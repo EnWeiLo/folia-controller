@@ -47,6 +47,9 @@ class FoliaAssetServer(
         "<style>${asset("fc-tuning.css")}</style><script>${asset("fc-tuning-schema.js")}</script>" +
             "<script>${asset("fc-tuning.js")}</script><script>${asset("fc-audio.js")}</script>"
     }
+    private val audioScript: String by lazy {
+        context.assets.open("fc-audio.js").bufferedReader().use { it.readText() }
+    }
     private val fpsScript: String by lazy {
         context.assets.open("folia-fps.js").bufferedReader().use { it.readText() }
     }
@@ -62,6 +65,15 @@ class FoliaAssetServer(
 
         if (name.endsWith("sw.js") || name == "registerSW.js" || name.startsWith("workbox-")) return notFound()
         if (path == "/index.html") return indexHtml()
+        // Flowrics' own effects (shared/web, at the asset root): the page and its scripts.
+        if (path == "/fx.html") return pageHtml("fx.html", flowrics = true)
+        if (name.startsWith("flowrics-") && name.endsWith(".js")) {
+            return try {
+                WebResourceResponse("text/javascript", "utf-8", 200, "OK", headers(), context.assets.open(name))
+            } catch (e: IOException) {
+                notFound()
+            }
+        }
 
         return try {
             val stream = context.assets.open(ROOT + path)
@@ -72,9 +84,11 @@ class FoliaAssetServer(
         }
     }
 
-    private fun indexHtml(): WebResourceResponse {
+    private fun indexHtml(): WebResourceResponse = pageHtml("$ROOT/index.html", flowrics = false)
+
+    private fun pageHtml(asset: String, flowrics: Boolean): WebResourceResponse {
         val html = try {
-            context.assets.open("$ROOT/index.html").bufferedReader().use { it.readText() }
+            context.assets.open(asset).bufferedReader().use { it.readText() }
         } catch (e: IOException) {
             return textResponse(
                 "<html><body style='background:#09090b;color:#eee;font-family:sans-serif;padding:24px'>" +
@@ -100,7 +114,9 @@ class FoliaAssetServer(
             "displayHz:${String.format(Locale.US, "%.1f", settings.displayHz)}};" +
             "try{localStorage.setItem('visualizer_frame_rate','${settings.frameCap}')}catch(e){}"
         val fps = if (settings.showFps) "<script>$fpsScript</script>" else ""
-        val injection = "$viewport<script>$config</script><script>$bridgeScript</script>$tuningScripts$fps"
+        // Flowrics' page needs the feed and the audio, not Folia's tuning panel.
+        val extras = if (flowrics) "<script>$audioScript</script>" else tuningScripts
+        val injection = "$viewport<script>$config</script><script>$bridgeScript</script>$extras$fps"
         out = if (headTag != null) {
             out.substring(0, headTag.range.last + 1) + injection + out.substring(headTag.range.last + 1)
         } else {

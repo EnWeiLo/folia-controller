@@ -53,9 +53,18 @@ adb shell input tap $CX $CY
 sleep 1.5
 shot phone-card-hidden
 
-launch --ez demo true --ez tuning true
+launch --ez demo true --ez tuning true --es mode classic
 sleep 32
 shot phone-tuning
+
+# Flowrics effects (the card is tapped away so the lyrics show)
+for fx in dive vinyl comic boom fireworks; do
+  launch --ez demo true --es mode "fx:$fx"
+  sleep 14
+  adb shell input tap $CX $CY
+  sleep 3
+  shot "phone-fx-$fx"
+done
 
 # Tablet (landscape)
 adb shell wm size 2560x1600
@@ -66,9 +75,12 @@ shot tablet-card
 launch --ez demo true --ez tutorial true
 sleep 15
 shot tablet-tutorial
-launch --ez demo true --ez tuning true
+launch --ez demo true --ez tuning true --es mode classic
 sleep 34
 shot tablet-tuning
+launch --ez demo true --es mode fx:neon
+sleep 16
+shot tablet-fx-neon
 adb shell wm size reset
 adb shell wm density reset
 
