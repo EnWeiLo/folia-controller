@@ -41,6 +41,12 @@ class FoliaAssetServer(
     private val bridgeScript: String by lazy {
         context.assets.open("folia-bridge.js").bufferedReader().use { it.readText() }
     }
+    // The "動畫與外觀" panel, shared with the Windows app (/shared/web, added as an asset folder).
+    private val tuningScripts: String by lazy {
+        fun asset(name: String) = context.assets.open(name).bufferedReader().use { it.readText() }
+        "<style>${asset("fc-tuning.css")}</style><script>${asset("fc-tuning-schema.js")}</script>" +
+            "<script>${asset("fc-tuning.js")}</script>"
+    }
     private val fpsScript: String by lazy {
         context.assets.open("folia-fps.js").bufferedReader().use { it.readText() }
     }
@@ -91,7 +97,7 @@ class FoliaAssetServer(
             "displayHz:${String.format(Locale.US, "%.1f", settings.displayHz)}};" +
             "try{localStorage.setItem('visualizer_frame_rate','${settings.frameCap}')}catch(e){}"
         val fps = if (settings.showFps) "<script>$fpsScript</script>" else ""
-        val injection = "$viewport<script>$config</script><script>$bridgeScript</script>$fps"
+        val injection = "$viewport<script>$config</script><script>$bridgeScript</script>$tuningScripts$fps"
         out = if (headTag != null) {
             out.substring(0, headTag.range.last + 1) + injection + out.substring(headTag.range.last + 1)
         } else {

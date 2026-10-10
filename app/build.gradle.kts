@@ -38,6 +38,9 @@ android {
         }
     }
 
+    // The settings panel shared with the Windows app.
+    sourceSets["main"].assets.srcDirs("src/main/assets", rootProject.file("shared/web"))
+
     androidResources {
         // Vite emits chunk files whose names can start with "_" or ".", keep every asset.
         ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~"

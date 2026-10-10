@@ -1,0 +1,280 @@
+/* The "動畫與外觀" panel (fc-tuning.js). Sizes are multiples of --fu, the CSS px per real px,
+   because Folia's page may run at a zoom or viewport scale where 1 CSS px is not 1 screen px. */
+.fct-root {
+  --fu: 1px;
+  --fct-fg: #f4f4f5;
+  --fct-fg2: rgba(244, 244, 245, 0.7);
+  --fct-fg3: rgba(244, 244, 245, 0.46);
+  --fct-line: rgba(255, 255, 255, 0.1);
+  --fct-accent: #a5b4fc;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--fct-fg);
+  font-family: "Segoe UI", "Microsoft JhengHei UI", "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", system-ui, sans-serif;
+  font-size: calc(var(--fu) * 15);
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+.fct-root.fct-open { display: flex; }
+.fct-root *, .fct-root *::before, .fct-root *::after { box-sizing: border-box; }
+.fct-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
+.fct-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(calc(100% - var(--fu) * 24), calc(var(--fu) * 600));
+  height: min(calc(100% - var(--fu) * 32), calc(var(--fu) * 760));
+  border-radius: calc(var(--fu) * 20);
+  background: rgba(22, 22, 26, 0.97);
+  border: calc(var(--fu) * 1) solid var(--fct-line);
+  box-shadow: 0 calc(var(--fu) * 24) calc(var(--fu) * 64) rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.fct-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--fu) * 14) calc(var(--fu) * 12) calc(var(--fu) * 6) calc(var(--fu) * 22);
+}
+.fct-head h2 { margin: 0; font-size: calc(var(--fu) * 18); font-weight: 600; }
+.fct-icon {
+  width: calc(var(--fu) * 38);
+  height: calc(var(--fu) * 38);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fct-fg2);
+  font-size: calc(var(--fu) * 16);
+  cursor: pointer;
+}
+.fct-icon:hover { background: rgba(255, 255, 255, 0.08); color: var(--fct-fg); }
+
+.fct-tabs {
+  display: flex;
+  gap: calc(var(--fu) * 4);
+  padding: calc(var(--fu) * 4) calc(var(--fu) * 16) calc(var(--fu) * 10);
+  border-bottom: calc(var(--fu) * 1) solid var(--fct-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fct-tab {
+  flex: none;
+  padding: calc(var(--fu) * 7) calc(var(--fu) * 14);
+  border: 0;
+  border-radius: calc(var(--fu) * 999);
+  background: transparent;
+  color: var(--fct-fg2);
+  font: inherit;
+  font-size: calc(var(--fu) * 14);
+  cursor: pointer;
+}
+.fct-tab:hover { background: rgba(255, 255, 255, 0.06); color: var(--fct-fg); }
+.fct-tab.fct-on { background: rgba(255, 255, 255, 0.14); color: var(--fct-fg); font-weight: 600; }
+
+.fct-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(var(--fu) * 6) 0 calc(var(--fu) * 16);
+  -webkit-overflow-scrolling: touch;
+}
+.fct-section {
+  margin: calc(var(--fu) * 16) calc(var(--fu) * 22) calc(var(--fu) * 2);
+  color: var(--fct-fg3);
+  font-size: calc(var(--fu) * 12.5);
+  letter-spacing: 0.04em;
+}
+.fct-section-strong { color: var(--fct-fg2); font-size: calc(var(--fu) * 13.5); margin-top: calc(var(--fu) * 22); }
+.fct-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--fu) * 16);
+  min-height: calc(var(--fu) * 52);
+  padding: calc(var(--fu) * 8) calc(var(--fu) * 22);
+}
+.fct-row-pick { border-bottom: calc(var(--fu) * 1) solid var(--fct-line); margin-bottom: calc(var(--fu) * 4); }
+.fct-label { flex: 1; min-width: 0; }
+.fct-name { font-size: calc(var(--fu) * 14.5); }
+.fct-hint { margin-top: calc(var(--fu) * 2); color: var(--fct-fg3); font-size: calc(var(--fu) * 12); }
+.fct-changed {
+  display: inline-block;
+  margin-left: calc(var(--fu) * 8);
+  padding: 0 calc(var(--fu) * 6);
+  border-radius: calc(var(--fu) * 6);
+  background: rgba(165, 180, 252, 0.16);
+  color: var(--fct-accent);
+  font-size: calc(var(--fu) * 11);
+  vertical-align: middle;
+}
+.fct-control { flex: none; display: flex; align-items: center; gap: calc(var(--fu) * 8); max-width: 58%; }
+
+.fct-switch {
+  position: relative;
+  width: calc(var(--fu) * 44);
+  height: calc(var(--fu) * 26);
+  border: 0;
+  border-radius: calc(var(--fu) * 13);
+  padding: 0;
+  background: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.fct-switch::after {
+  content: "";
+  position: absolute;
+  top: calc(var(--fu) * 3);
+  left: calc(var(--fu) * 3);
+  width: calc(var(--fu) * 20);
+  height: calc(var(--fu) * 20);
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.18s ease;
+}
+.fct-switch[aria-checked=true] { background: #6366f1; }
+.fct-switch[aria-checked=true]::after { transform: translateX(calc(var(--fu) * 18)); }
+
+.fct-seg {
+  display: inline-flex;
+  padding: calc(var(--fu) * 3);
+  border-radius: calc(var(--fu) * 10);
+  background: rgba(255, 255, 255, 0.07);
+}
+.fct-seg-btn {
+  padding: calc(var(--fu) * 5) calc(var(--fu) * 12);
+  border: 0;
+  border-radius: calc(var(--fu) * 7);
+  background: transparent;
+  color: var(--fct-fg2);
+  font: inherit;
+  font-size: calc(var(--fu) * 13);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fct-seg-btn.fct-on { background: rgba(255, 255, 255, 0.18); color: var(--fct-fg); font-weight: 600; }
+
+.fct-select, .fct-text {
+  max-width: 100%;
+  font: inherit;
+  font-size: calc(var(--fu) * 14);
+  color: var(--fct-fg);
+  background: rgba(255, 255, 255, 0.08);
+  border: calc(var(--fu) * 1) solid var(--fct-line);
+  border-radius: calc(var(--fu) * 9);
+  padding: calc(var(--fu) * 7) calc(var(--fu) * 10);
+}
+.fct-select { cursor: pointer; }
+.fct-select option { background: #18181b; color: var(--fct-fg); }
+.fct-text { width: calc(var(--fu) * 230); }
+.fct-text::placeholder { color: var(--fct-fg3); }
+.fct-color { width: calc(var(--fu) * 44); height: calc(var(--fu) * 30); border: 0; background: transparent; padding: 0; cursor: pointer; }
+
+.fct-range-line { display: flex; align-items: center; gap: calc(var(--fu) * 10); }
+.fct-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: calc(var(--fu) * 170);
+  height: calc(var(--fu) * 26);
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  --pct: 0%;
+}
+.fct-range:disabled { opacity: 0.35; cursor: default; }
+.fct-range::-webkit-slider-runnable-track {
+  height: calc(var(--fu) * 4);
+  border-radius: calc(var(--fu) * 2);
+  background: linear-gradient(to right, var(--fct-accent) var(--pct), rgba(255, 255, 255, 0.18) var(--pct));
+}
+.fct-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: calc(var(--fu) * 16);
+  height: calc(var(--fu) * 16);
+  margin-top: calc(var(--fu) * -6);
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+}
+.fct-range::-moz-range-track {
+  height: calc(var(--fu) * 4);
+  border-radius: calc(var(--fu) * 2);
+  background: linear-gradient(to right, var(--fct-accent) var(--pct), rgba(255, 255, 255, 0.18) var(--pct));
+}
+.fct-range::-moz-range-thumb { width: calc(var(--fu) * 16); height: calc(var(--fu) * 16); border-radius: 50%; background: #fff; border: 0; }
+.fct-num {
+  min-width: calc(var(--fu) * 48);
+  text-align: right;
+  color: var(--fct-fg2);
+  font-size: calc(var(--fu) * 13);
+  font-variant-numeric: tabular-nums;
+}
+.fct-chip {
+  padding: calc(var(--fu) * 4) calc(var(--fu) * 10);
+  border: calc(var(--fu) * 1) solid var(--fct-line);
+  border-radius: calc(var(--fu) * 999);
+  background: transparent;
+  color: var(--fct-fg2);
+  font: inherit;
+  font-size: calc(var(--fu) * 12.5);
+  cursor: pointer;
+}
+.fct-chip.fct-on { background: rgba(165, 180, 252, 0.18); border-color: transparent; color: var(--fct-accent); }
+
+.fct-note, .fct-empty {
+  margin: calc(var(--fu) * 14) calc(var(--fu) * 22) 0;
+  color: var(--fct-fg3);
+  font-size: calc(var(--fu) * 12.5);
+}
+.fct-empty { padding: calc(var(--fu) * 20) 0; text-align: center; }
+
+.fct-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--fu) * 12);
+  padding: calc(var(--fu) * 12) calc(var(--fu) * 16);
+  border-top: calc(var(--fu) * 1) solid var(--fct-line);
+}
+.fct-text-btn {
+  border: 0;
+  background: transparent;
+  color: var(--fct-fg2);
+  font: inherit;
+  font-size: calc(var(--fu) * 13.5);
+  padding: calc(var(--fu) * 8) calc(var(--fu) * 6);
+  cursor: pointer;
+}
+.fct-text-btn:hover { color: var(--fct-fg); text-decoration: underline; }
+.fct-primary {
+  border: 0;
+  border-radius: calc(var(--fu) * 999);
+  background: #fff;
+  color: #111114;
+  font: inherit;
+  font-size: calc(var(--fu) * 14);
+  font-weight: 600;
+  padding: calc(var(--fu) * 9) calc(var(--fu) * 20);
+  cursor: pointer;
+}
+.fct-primary.fct-quiet { background: rgba(255, 255, 255, 0.12); color: var(--fct-fg); font-weight: 500; }
+.fct-root button:focus-visible, .fct-root select:focus-visible, .fct-root input:focus-visible {
+  outline: calc(var(--fu) * 2) solid var(--fct-accent);
+  outline-offset: calc(var(--fu) * 2);
+}
+
+/* Narrow screens (set by fc-tuning.js in real px): the control drops under its label. */
+.fct-root.fct-narrow .fct-row { padding-left: calc(var(--fu) * 18); padding-right: calc(var(--fu) * 18); }
+.fct-root.fct-narrow .fct-kind-number,
+.fct-root.fct-narrow .fct-kind-string { flex-direction: column; align-items: stretch; gap: calc(var(--fu) * 6); }
+.fct-root.fct-narrow .fct-kind-number .fct-control,
+.fct-root.fct-narrow .fct-kind-string .fct-control { max-width: none; }
+.fct-root.fct-narrow .fct-range-line { flex: 1; }
+.fct-root.fct-narrow .fct-range { flex: 1; width: auto; }
+.fct-root.fct-narrow .fct-text { flex: 1; width: auto; }
+.fct-root.fct-narrow .fct-control { max-width: 62%; }

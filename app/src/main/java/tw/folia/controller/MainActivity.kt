@@ -156,7 +156,11 @@ class MainActivity : Activity() {
             webView.evaluateJavascript("window.__foliaPush&&window.__foliaPush(${JSONObject.quote(json)})", null)
         }
         MediaHub.uiListener = { refreshUi() }
-        if (intent.getBooleanExtra("demo", false)) MediaHub.startDemo(demoCover())
+        if (intent.getBooleanExtra("demo", false)) {
+            MediaHub.startDemo(demoCover())
+            // CI screenshots of the 動畫與外觀 panel.
+            if (intent.getBooleanExtra("tuning", false)) handler.postDelayed({ openTuning() }, 12000)
+        }
         loadFolia()
         refreshUi()
     }
@@ -606,6 +610,29 @@ class MainActivity : Activity() {
             }.start()
     }
 
+    // ---------- 動畫與外觀 panel (fc-tuning.js, inside the WebView) ----------
+
+    private var tuningOpen = false
+
+    /** The panel is web content, so the gesture layer and the card step aside while it's open. */
+    private fun openTuning() {
+        tuningOpen = true
+        gestureLayer.visibility = View.GONE
+        card.visibility = View.GONE
+        val u = String.format(Locale.US, "%.3f", resources.displayMetrics.density * currentQuality().renderScale)
+        webView.evaluateJavascript(
+            "window.FcTuning&&FcTuning.open({u:$u,onClose:function(){FoliaNative.tuningClosed()}})", null,
+        )
+    }
+
+    private fun tuningClosed() {
+        if (!tuningOpen) return
+        tuningOpen = false
+        gestureLayer.visibility = View.VISIBLE
+        card.visibility = if (controlsVisible) View.VISIBLE else View.INVISIBLE
+        enterImmersive()
+    }
+
     // ---------- gesture tutorial ----------
 
     private fun showGestureTutorial() {
@@ -707,7 +734,11 @@ class MainActivity : Activity() {
     @Deprecated("Activity's back handling without AndroidX.")
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (tutorial != null) hideGestureTutorial(remember = true) else super.onBackPressed()
+        when {
+            tutorial != null -> hideGestureTutorial(remember = true)
+            tuningOpen -> webView.evaluateJavascript("window.FcTuning&&FcTuning.close()", null)
+            else -> super.onBackPressed()
+        }
     }
 
     private fun buildPermissionPanel(): LinearLayout = LinearLayout(this).apply {
@@ -1093,6 +1124,7 @@ class MainActivity : Activity() {
             "歌詞時間偏移：${if (offset > 0) "+" else ""}${offset} ms",
             "保持螢幕常亮：${onOff("keep_screen_on", true)}",
             "本機歌詞資料夾：${LocalLyrics.folderLabel ?: "未設定"}",
+            "動畫與外觀細節（字型、背景、各動畫細部設定）",
             "手勢說明",
             "重新載入畫面",
         )
@@ -1110,8 +1142,9 @@ class MainActivity : Activity() {
                     7 -> pickOffset()
                     8 -> { toggle("keep_screen_on", true); applyKeepScreenOn(); showSettings() }
                     9 -> pickLyricsFolder()
-                    10 -> showGestureTutorial()
-                    11 -> loadFolia()
+                    10 -> openTuning()
+                    11 -> showGestureTutorial()
+                    12 -> loadFolia()
                 }
             }
             .setOnDismissListener { enterImmersive() }
@@ -1196,10 +1229,17 @@ class MainActivity : Activity() {
     /** Called from folia-bridge.js when Folia's (fake) socket opens. */
     inner class JsBridge {
         @JavascriptInterface
+        fun tuningClosed() {
+            handler.post { this@MainActivity.tuningClosed() }
+        }
+
+        @JavascriptInterface
         fun requestSnapshot() {
             handler.post {
                 MediaHub.pushSnapshot()
                 updateFoliaInset()
+                // Applying the panel's changes reloads the page, which also closes it.
+                tuningClosed()
             }
         }
     }

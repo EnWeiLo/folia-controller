@@ -66,7 +66,10 @@ internal sealed class WebAssets
         html = Regex.Replace(html, @"<script[^>]*registerSW[^>]*>\s*</script>", "", RegexOptions.IgnoreCase);
         html = Regex.Replace(html, @"<title>[^<]*</title>", "<title>Folia 控制器</title>", RegexOptions.IgnoreCase);
         var head = Regex.Match(html, @"<head[^>]*>", RegexOptions.IgnoreCase);
-        const string injection = "<link rel=\"stylesheet\" href=\"/__fc/overlay.css\"><script src=\"/__fc/overlay.js\"></script>";
+        // fc-tuning.js must run before Folia reads its address (it merges the panel's options into cfg).
+        const string injection = "<link rel=\"stylesheet\" href=\"/__fc/overlay.css\"><link rel=\"stylesheet\" href=\"/__fc/fc-tuning.css\">" +
+            "<script src=\"/__fc/fc-tuning-schema.js\"></script><script src=\"/__fc/fc-tuning.js\"></script>" +
+            "<script src=\"/__fc/overlay.js\"></script>";
         return head.Success ? html.Insert(head.Index + head.Length, injection) : injection + html;
     }
 

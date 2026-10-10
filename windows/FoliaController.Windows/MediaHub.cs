@@ -36,6 +36,11 @@ internal sealed class MediaHub
     private int _coverId;
     private int _coverVersionLoaded = -1;
     private int _coverLoading;
+    private int _coverRequests;
+    // The song before's artwork: players (Spotify especially) often keep it on the new song for a
+    // moment, so a cover equal to it is treated as not-yet-updated.
+    private byte[]? _previousSongCover;
+    private string _previousAlbum = "";
     private CoverPalette _palette = CoverPalette.Neutral;
     private LyricDoc? _displayDoc;
 
@@ -101,6 +106,8 @@ internal sealed class MediaHub
                 var songChanged = key != _trackKey;
                 if (songChanged)
                 {
+                    if (_cover != null) _previousSongCover = _cover;
+                    _previousAlbum = previous?.Album ?? "";
                     _trackKey = key;
                     _lyric = null;
                     _lyricContainer = null;
@@ -118,7 +125,7 @@ internal sealed class MediaHub
                     StartLyricLookup(snap, key);
                 }
 
-                if (snap.CoverVersion != _coverVersionLoaded) LoadCover(key, snap.CoverVersion);
+                if (snap.CoverVersion != _coverVersionLoaded || songChanged) LoadCover();
 
                 var trackFieldsChanged = songChanged || previous == null ||
                                          previous.Album != snap.Album || previous.DurationMs != snap.DurationMs ||
@@ -377,29 +384,73 @@ internal sealed class MediaHub
 
     // ---------- cover art ----------
 
-    private void LoadCover(string key, int version)
+    /// <summary>
+    /// Reads the player's artwork. Requests are never dropped: one loop runs at a time and goes round
+    /// again while new requests came in. A cover identical to the previous song's (and a different
+    /// album) is the player still showing the old artwork, so it is read again for a few seconds
+    /// instead of being shown; if it never changes, no cover is shown rather than a wrong one.
+    /// </summary>
+    private void LoadCover()
     {
-        if (Interlocked.CompareExchange(ref _coverLoading, 1, 0) != 0) return; // the next snapshot retries
-        _ = Task.Run(async () =>
+        Interlocked.Increment(ref _coverRequests);
+        if (Interlocked.CompareExchange(ref _coverLoading, 1, 0) != 0) return;
+        _ = Task.Run(CoverLoopAsync);
+    }
+
+    private async Task CoverLoopAsync()
+    {
+        try
         {
-            try
+            // Artwork often lands a moment after the title; give it that moment.
+            await Task.Delay(150);
+            string? lastKey = null;
+            var staleReads = 0;
+            while (true)
             {
-                // Artwork often lands a moment after the title; give it that moment.
-                await Task.Delay(150);
+                var requests = Volatile.Read(ref _coverRequests);
+                string? key;
+                int version;
+                lock (_gate)
+                {
+                    key = _trackKey;
+                    version = _snap?.CoverVersion ?? 0;
+                }
+                if (key == null) break;
+                if (key != lastKey)
+                {
+                    lastKey = key;
+                    staleReads = 0;
+                }
+
                 var cover = await _source.ReadCoverAsync();
+                var retry = false;
                 string? trackEvent = null, stateEvent = null;
                 lock (_gate)
                 {
-                    if (key != _trackKey) return;
-                    _coverVersionLoaded = version;
-                    if (cover != null && (_cover == null || !_cover.AsSpan().SequenceEqual(cover.Value.Data)))
+                    if (key == _trackKey)
                     {
-                        _cover = cover.Value.Data;
-                        _coverMime = cover.Value.Mime;
-                        _coverId++;
-                        _palette = CoverPalette.FromImage(_cover);
-                        trackEvent = TrackEvent();
-                        stateEvent = ControllerStateEvent();
+                        var stale = cover != null && _previousSongCover != null &&
+                                    !string.Equals(_snap?.Album ?? "", _previousAlbum, StringComparison.Ordinal) &&
+                                    cover.Value.Data.AsSpan().SequenceEqual(_previousSongCover);
+                        // No artwork yet is also worth a few more looks.
+                        if ((stale && staleReads < 20) || (cover == null && staleReads < 8))
+                        {
+                            staleReads++;
+                            retry = true;
+                        }
+                        else
+                        {
+                            _coverVersionLoaded = version;
+                            if (cover != null && !stale && (_cover == null || !_cover.AsSpan().SequenceEqual(cover.Value.Data)))
+                            {
+                                _cover = cover.Value.Data;
+                                _coverMime = cover.Value.Mime;
+                                _coverId++;
+                                _palette = CoverPalette.FromImage(_cover);
+                                trackEvent = TrackEvent();
+                                stateEvent = ControllerStateEvent();
+                            }
+                        }
                     }
                 }
                 if (trackEvent != null)
@@ -408,16 +459,26 @@ internal sealed class MediaHub
                     Broadcast(stateEvent!);
                     DisplayChanged?.Invoke();
                 }
+                if (retry)
+                {
+                    await Task.Delay(400);
+                    continue;
+                }
+                if (Volatile.Read(ref _coverRequests) == requests) break;
             }
-            catch (Exception ex)
-            {
-                CrashLog.Write(ex, fatal: false);
-            }
-            finally
-            {
-                Volatile.Write(ref _coverLoading, 0);
-            }
-        });
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write(ex, fatal: false);
+        }
+        finally
+        {
+            Volatile.Write(ref _coverLoading, 0);
+        }
+        // A request that came in just as the loop was finishing.
+        bool again;
+        lock (_gate) again = _snap != null && _snap.CoverVersion != _coverVersionLoaded;
+        if (again) LoadCover();
     }
 
     public (byte[] Data, string Mime)? GetCover(int id)

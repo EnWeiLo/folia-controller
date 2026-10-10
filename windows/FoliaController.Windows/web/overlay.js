@@ -281,14 +281,18 @@
     document.addEventListener('pointermove', function (e) {
       if (e.pointerType === 'mouse') wake();
     }, { passive: true });
+    function onOurUi(target) {
+      return bar.contains(target) || $('fc-panel').contains(target) || $('fc-picker').contains(target) ||
+        !!(target && target.closest && target.closest('.fct-root'));
+    }
     document.addEventListener('pointerup', function (e) {
-      if (e.button > 0 || panelOpen || pickerOpen) return;
-      if (bar.contains(e.target) || $('fc-panel').contains(e.target) || $('fc-picker').contains(e.target)) return;
+      if (e.button > 0 || panelOpen || pickerOpen || tuningOpen()) return;
+      if (onOurUi(e.target)) return;
       clearTimeout(clickTimer);
       clickTimer = setTimeout(function () { setCard(!cardOpen); }, e.pointerType === 'mouse' ? 240 : 0);
     });
     document.addEventListener('dblclick', function (e) {
-      if (bar.contains(e.target) || $('fc-panel').contains(e.target) || $('fc-picker').contains(e.target)) return;
+      if (onOurUi(e.target) || tuningOpen()) return;
       clearTimeout(clickTimer);
       toggleFullscreen();
     });
@@ -357,7 +361,17 @@
     updateInset();
   }
 
+  function tuningOpen() { return !!(window.FcTuning && window.FcTuning.isOpen()); }
+
+  function openTuning() {
+    if (!window.FcTuning) return;
+    openPanel(false);
+    openPicker(false);
+    window.FcTuning.open({ u: uiScale });
+  }
+
   function onKey(e) {
+    if (tuningOpen()) return;
     var tag = (e.target && e.target.tagName) || '';
     if (tag === 'SELECT' || tag === 'INPUT' && e.target.type !== 'range') return;
     var handled = true;
@@ -494,6 +508,8 @@
       '<div class="fc-panel-head"><h2>設定</h2><button class="fc-btn fc-small" id="fc-close" aria-label="關閉">' + icon('close') + '</button></div>' +
       '<div class="fc-section">這台裝置的畫面</div>' +
       selectRow('fc-mode', '歌詞動畫', MODES) +
+      '<div class="fc-row"><label>動畫與外觀細節<small id="fc-tuning-note">每種動畫的細部設定、字型、副歌詞區、背景</small></label>' +
+        '<button class="fc-text-btn" id="fc-tuning-open">調整…</button></div>' +
       (qualityApplies ? selectRow('fc-quality', '畫質', qualityOptions, '越低越流暢，歌詞文字依然清晰') : '') +
       switchRow('fc-daylight', '日間主題') +
       switchRow('fc-fps-toggle', '顯示 FPS', '左上角顯示每秒畫出幾幀') +
@@ -507,6 +523,7 @@
       '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · L 換歌詞' + (webview ? ' · D 桌面歌詞' : '') + ' · F 或雙擊 全螢幕 · 點一下歌詞 收起／打開資訊卡 · Esc 離開</div>';
 
     $('fc-close').onclick = function () { openPanel(false); };
+    $('fc-tuning-open').onclick = openTuning;
     $('fc-mode').onchange = function () { store.set('mode', this.value); reloadWithSettings(); };
     if (qualityApplies) {
       $('fc-quality').onchange = function () {
@@ -537,6 +554,8 @@
 
   function syncPanel() {
     $('fc-mode').value = store.get('mode', 'classic');
+    var changed = window.FcTuning ? window.FcTuning.changedCount() : 0;
+    $('fc-tuning-note').textContent = changed ? '已調整 ' + changed + ' 項（每種動畫的細部設定、字型、副歌詞區、背景）' : '每種動畫的細部設定、字型、副歌詞區、背景';
     if (qualityApplies) $('fc-quality').value = qualityId();
     setSwitch('fc-daylight', store.get('daylight', false));
     setSwitch('fc-fps-toggle', store.get('fps', false));

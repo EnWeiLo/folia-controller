@@ -33,6 +33,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="web\*" LogicalName="web/%(Filename)%(Extension)" />
+    <!-- The "動畫與外觀" panel, shared with the Android app. -->
+    <EmbeddedResource Include="..\..\shared\web\*" LogicalName="web/%(Filename)%(Extension)" />
     <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
     <!-- Folia's web build, zipped by CI (see .github/workflows/build.yml). -->
     <EmbeddedResource Include="folia.zip" LogicalName="folia.zip" Condition="Exists('folia.zip')" />

@@ -59,5 +59,23 @@ await shoot('tablet', {
   console.log('tablet subtitle vs card: ' + JSON.stringify(info));
 });
 
+// 商籟 with its outer frame text switched off and the next-line preview hidden (options from the
+// 動畫與外觀 panel), then the panel itself. Folia must start with them and show no errors.
+await shoot('sonnet-tuned', { viewport: { width: 1600, height: 900 } }, async (page) => {
+  await page.evaluate(() => {
+    localStorage.setItem('fc.mode', JSON.stringify('sonnet'));
+    localStorage.setItem('fc.tuning', JSON.stringify({ m: { sonnet: { outerFrameMode: 'none', showGiantDecorativeText: false } }, x: { hideUpcoming: true } }));
+  });
+  await page.goto(`http://127.0.0.1:${port}/`);
+  await page.waitForTimeout(12000);
+  const cfg = await page.evaluate(() => new URL(location.href).searchParams.get('cfg'));
+  console.log('sonnet cfg: ' + cfg.slice(0, 160));
+  if (!/"outerFrameMode":"none"/.test(cfg)) errors.push('sonnet-tuned: options were not merged into cfg');
+});
+await shoot('tuning-panel', { viewport: { width: 1600, height: 900 } }, async (page) => {
+  await page.evaluate(() => window.FcTuning.open({ u: 1 }));
+  await page.waitForTimeout(500);
+});
+
 await browser.close();
 console.log(errors.length ? 'page errors:\n' + errors.join('\n') : 'no page errors');
