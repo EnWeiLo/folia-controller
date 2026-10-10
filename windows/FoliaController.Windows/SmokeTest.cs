@@ -128,6 +128,105 @@ internal static class SmokeTest
         return failures == 0 ? 0 : 1;
     }
 
+    /// <summary>
+    /// `--render-desktop-lyrics &lt;out.png&gt;`: draws sample desktop-lyrics frames over a light and a dark
+    /// background into one picture, so CI shows what the window looks like (it needs a real desktop otherwise).
+    /// Uses made-up lines, not real lyrics.
+    /// </summary>
+    public static int RenderDesktopLyrics(string outPath)
+    {
+        var lines = new List<LyricLine>();
+        var translation = new List<TimedText>();
+        var demo = new[]
+        {
+            ("窗外的雨停了", "The rain outside has stopped"),
+            ("光落在桌上", "Light falls across the table"),
+            ("夜明けの街を歩いていく", "走在黎明的街上"),
+        };
+        for (var i = 0; i < demo.Length; i++)
+        {
+            var (text, english) = demo[i];
+            var start = i * 4000L;
+            var per = 3200L / text.Length;
+            lines.Add(new LyricLine(start, text.Select((c, j) => new LyricWord(start + j * per, per, c.ToString())).ToList(), text));
+            translation.Add(new TimedText(start, english));
+        }
+        var doc = new LyricDoc(lines, translation, Array.Empty<TimedText>());
+
+        // The same made-up cover as the Android preview: blue → violet.
+        using var cover = new Bitmap(64, 64);
+        using (var g = Graphics.FromImage(cover))
+        using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 0, 64, 64),
+                   Color.FromArgb(0x2B, 0x3A, 0x8C), Color.FromArgb(0x7A, 0x4F, 0xC4), 45f))
+        {
+            g.FillRectangle(brush, 0, 0, 64, 64);
+        }
+        using var coverStream = new MemoryStream();
+        cover.Save(coverStream, System.Drawing.Imaging.ImageFormat.Png);
+        var palette = CoverPalette.FromImage(coverStream.ToArray());
+
+        var state = new DisplayState(true, "示範歌曲", "Folia 控制器", true, doc, palette, 1);
+        var noLyrics = state with { Doc = null };
+        var line0 = DesktopLyricsModel.FrameAt(state, 1500);
+        var line1 = DesktopLyricsModel.FrameAt(state, 4000 + 2100);
+        var cases = new (string Label, RenderInput Input)[]
+        {
+            ("逐字進行中", new RenderInput(line0, null, 1, 1500, palette, false, true, ToolbarButton.None)),
+            ("滑鼠移上去", new RenderInput(line1, null, 1, 6100, palette, true, true, ToolbarButton.PlayPause)),
+            ("換行動畫中", new RenderInput(line1, line0, 0.45, 4000 + 300, palette, false, true, ToolbarButton.None)),
+            ("日文", new RenderInput(DesktopLyricsModel.FrameAt(state, 8000 + 1800), null, 1, 9800, palette, false, true, ToolbarButton.None)),
+            ("沒有歌詞時", new RenderInput(DesktopLyricsModel.FrameAt(noLyrics, 1000), null, 1, 1000, palette, false, true, ToolbarButton.None)),
+        };
+
+        using var renderer = new DesktopLyricsRenderer { Scale = 1.25f, TextSize = 34 };
+        var size = renderer.WindowSize(new Rectangle(0, 0, 1600, 900));
+        const int gap = 16, labelWidth = 150;
+        var sheet = new Bitmap(labelWidth + size.Width * 2 + gap * 3, cases.Length * (size.Height + gap) + gap);
+        using (var g = Graphics.FromImage(sheet))
+        using (var layer = new Bitmap(size.Width, size.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb))
+        using (var labelFont = new Font("Microsoft JhengHei UI", 15f, FontStyle.Regular, GraphicsUnit.Pixel))
+        {
+            g.Clear(Color.FromArgb(40, 40, 44));
+            for (var row = 0; row < cases.Length; row++)
+            {
+                var y = gap + row * (size.Height + gap);
+                g.DrawString(cases[row].Label, labelFont, Brushes.White, 12, y + size.Height / 2f - 10);
+                using (var lg = Graphics.FromImage(layer)) renderer.Render(lg, size, cases[row].Input);
+                for (var col = 0; col < 2; col++)
+                {
+                    var x = labelWidth + gap + col * (size.Width + gap);
+                    var area = new Rectangle(x, y, size.Width, size.Height);
+                    DrawBackdrop(g, area, light: col == 0);
+                    g.DrawImage(layer, area);
+                }
+            }
+        }
+        sheet.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+        sheet.Dispose();
+        Console.WriteLine($"desktop lyrics sample: {outPath} ({size.Width}×{size.Height} per frame, highlight #{palette.Highlight & 0xFFFFFF:X6})");
+        return 0;
+    }
+
+    /// <summary>A stand-in for what's under the lyrics: a bright web page or a dark desktop.</summary>
+    private static void DrawBackdrop(Graphics g, Rectangle area, bool light)
+    {
+        if (light)
+        {
+            g.FillRectangle(Brushes.White, area);
+            using var bar = new SolidBrush(Color.FromArgb(225, 228, 235));
+            using var accent = new SolidBrush(Color.FromArgb(60, 120, 220));
+            for (var i = 0; i < 6; i++)
+            {
+                g.FillRectangle(i == 2 ? accent : bar, area.X + 24, area.Y + 14 + i * 24, area.Width * (i % 2 == 0 ? 0.8f : 0.55f), 10);
+            }
+        }
+        else
+        {
+            using var brush = new System.Drawing.Drawing2D.LinearGradientBrush(area, Color.FromArgb(18, 32, 48), Color.FromArgb(70, 40, 60), 20f);
+            g.FillRectangle(brush, area);
+        }
+    }
+
     public static async Task<int> RunAsync(string[] args)
     {
         var port = args.Length > 1 && int.TryParse(args[1], out var p) ? p : 39999;

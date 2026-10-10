@@ -6,9 +6,14 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.Typeface
+import android.graphics.drawable.ClipDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
@@ -19,9 +24,13 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Display
+import android.view.GestureDetector
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
@@ -34,7 +43,9 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import org.json.JSONObject
@@ -69,29 +80,43 @@ class MainActivity : Activity() {
             "translation" to "中文翻譯", "romanization" to "羅馬拼音", "both" to "翻譯＋羅馬拼音", "none" to "不顯示",
         )
         private val OFFSETS = longArrayOf(-1000, -500, -250, 0, 250, 500, 750, 1000, 1500)
-        private const val AUTO_HIDE_MS = 4000L
         private const val REQUEST_LYRICS_FOLDER = 41
     }
 
     private lateinit var prefs: SharedPreferences
     private lateinit var assetServer: FoliaAssetServer
+    private lateinit var rootLayout: FrameLayout
     private lateinit var webView: WebView
-    private lateinit var controls: LinearLayout
+    private lateinit var gestureLayer: View
+    private lateinit var card: LinearLayout
+    private lateinit var coverView: ImageView
     private lateinit var titleText: TextView
     private lateinit var subtitleText: TextView
     private lateinit var statusText: TextView
+    private lateinit var seekRow: LinearLayout
     private lateinit var seekBar: SeekBar
     private lateinit var positionText: TextView
     private lateinit var durationText: TextView
     private lateinit var playButton: ImageButton
+    private lateinit var prevButton: ImageButton
+    private lateinit var nextButton: ImageButton
+    private lateinit var lyricsButton: ImageButton
+    private lateinit var settingsButton: ImageButton
+    private lateinit var feedback: LinearLayout
+    private lateinit var feedbackIcon: ImageView
+    private lateinit var feedbackText: TextView
     private lateinit var permissionPanel: LinearLayout
+    private var tutorial: View? = null
+    private var cardWide: Boolean? = null
+    private var appliedPalette: CoverPalette? = null
+    private var appliedCover: Bitmap? = null
 
     private val handler = Handler(Looper.getMainLooper())
+    /** The info card stays until a tap hides it (no auto-hide). */
     private var controlsVisible = true
     private var userSeeking = false
     private var resumed = false
 
-    private val autoHide = Runnable { setControlsVisible(false) }
     private val progressTicker = object : Runnable {
         override fun run() {
             if (controlsVisible) updateProgressUi()
@@ -131,7 +156,26 @@ class MainActivity : Activity() {
             webView.evaluateJavascript("window.__foliaPush&&window.__foliaPush(${JSONObject.quote(json)})", null)
         }
         MediaHub.uiListener = { refreshUi() }
+        if (intent.getBooleanExtra("demo", false)) MediaHub.startDemo(demoCover())
         loadFolia()
+        refreshUi()
+    }
+
+    /** A made-up cover for the interface preview. */
+    private fun demoCover(): Bitmap {
+        val size = 512
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.shader = android.graphics.LinearGradient(0f, 0f, size.toFloat(), size.toFloat(),
+            0xFF2B3A8C.toInt(), 0xFF7A4FC4.toInt(), android.graphics.Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+        paint.shader = null
+        paint.color = 0x33FFFFFF
+        canvas.drawCircle(size * 0.7f, size * 0.35f, size * 0.22f, paint)
+        paint.color = 0x22FFFFFF
+        canvas.drawCircle(size * 0.3f, size * 0.72f, size * 0.3f, paint)
+        return bitmap
     }
 
     override fun onResume() {
@@ -142,7 +186,6 @@ class MainActivity : Activity() {
         (getSystemService(DISPLAY_SERVICE) as DisplayManager).registerDisplayListener(displayListener, handler)
         updatePermissionState()
         handler.post(progressTicker)
-        showControlsBriefly()
     }
 
     override fun onPause() {
@@ -172,9 +215,13 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
-    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+    private fun dpf(value: Float): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics)
+
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface", "ClickableViewAccessibility")
     private fun buildLayout(): View {
         val root = FrameLayout(this)
+        rootLayout = root
         root.setBackgroundColor(Color.BLACK)
 
         WebView.setWebContentsDebuggingEnabled(true)
@@ -213,130 +260,450 @@ class MainActivity : Activity() {
         }
         root.addView(webView, FrameLayout.LayoutParams(MATCH, MATCH))
 
-        // Transparent layer: a tap anywhere shows / hides the controls (Folia's page needs no touch).
+        // Transparent layer over the lyrics that turns touches into gestures (Folia's page needs no touch).
+        val gestures = GestureDetector(this, GestureListener())
         val tapLayer = View(this).apply {
             isClickable = true
-            setOnClickListener { setControlsVisible(!controlsVisible) }
+            setOnTouchListener { _, event -> gestures.onTouchEvent(event); true }
         }
+        gestureLayer = tapLayer
         root.addView(tapLayer, FrameLayout.LayoutParams(MATCH, MATCH))
 
-        controls = buildControls()
-        root.addView(controls, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
+        feedback = buildFeedback()
+        root.addView(feedback, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
+
+        card = buildCard()
+        root.addView(card)
+        arrangeCard()
 
         permissionPanel = buildPermissionPanel()
         root.addView(permissionPanel, FrameLayout.LayoutParams(MATCH, MATCH))
         return root
     }
 
-    private fun buildControls(): LinearLayout {
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(24), dp(48), dp(24), dp(28))
-            background = GradientDrawable(
-                GradientDrawable.Orientation.BOTTOM_TOP,
-                intArrayOf(0xE6000000.toInt(), 0x99000000.toInt(), 0x00000000),
-            )
-            isClickable = true // swallow taps so they don't reach the tap layer
-        }
+    private fun label(sizeSp: Float, color: Int, bold: Boolean = false) = TextView(this).apply {
+        setTextColor(color)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+        if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+        includeFontPadding = false
+    }
 
-        titleText = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            typeface = Typeface.DEFAULT_BOLD
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            gravity = Gravity.CENTER
+    private fun buildCard(): LinearLayout {
+        coverView = ImageView(this).apply {
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) {
+                    outline.setRoundRect(0, 0, view.width, view.height, dpf(12f))
+                }
+            }
+            clipToOutline = true
+            contentDescription = "開啟播放器"
             setOnClickListener { openSourceApp() }
         }
-        subtitleText = TextView(this).apply {
-            setTextColor(0xCCFFFFFF.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            gravity = Gravity.CENTER
-            setOnClickListener { openSourceApp() }
-        }
-        statusText = TextView(this).apply {
-            setTextColor(0x99FFFFFF.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            gravity = Gravity.CENTER
-            setPadding(0, dp(2), 0, 0)
+        titleText = label(17f, Color.WHITE, bold = true)
+        subtitleText = label(13f, 0xA6FFFFFF.toInt()).apply { setPadding(0, dp(4), 0, 0) }
+        statusText = label(11.5f, 0x73FFFFFF).apply {
+            setPadding(0, dp(5), 0, 0)
             setOnClickListener { showLyricPicker() }
         }
-        panel.addView(titleText, LinearLayout.LayoutParams(MATCH, WRAP))
-        panel.addView(subtitleText, LinearLayout.LayoutParams(MATCH, WRAP))
-        panel.addView(statusText, LinearLayout.LayoutParams(MATCH, WRAP))
 
-        val seekRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, 0)
-        }
         positionText = timeLabel()
         durationText = timeLabel()
         seekBar = SeekBar(this).apply {
             max = 1
+            splitTrack = false
+            setPadding(dp(8), dp(10), dp(8), dp(10))
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
                     if (fromUser) positionText.text = formatTime(progress.toLong())
                 }
                 override fun onStartTrackingTouch(bar: SeekBar) {
                     userSeeking = true
-                    handler.removeCallbacks(autoHide)
                 }
                 override fun onStopTrackingTouch(bar: SeekBar) {
                     userSeeking = false
                     MediaHub.seekTo(bar.progress.toLong())
-                    scheduleAutoHide()
                 }
             })
         }
-        seekRow.addView(positionText, LinearLayout.LayoutParams(dp(52), WRAP))
-        seekRow.addView(seekBar, LinearLayout.LayoutParams(0, WRAP, 1f))
-        seekRow.addView(durationText, LinearLayout.LayoutParams(dp(52), WRAP))
-        panel.addView(seekRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { width = dp(720).coerceAtMost(resources.displayMetrics.widthPixels) })
-
-        val buttonRow = LinearLayout(this).apply {
+        seekRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, 0)
+            gravity = Gravity.CENTER_VERTICAL
+            addView(positionText, LinearLayout.LayoutParams(dp(38), WRAP))
+            addView(seekBar, LinearLayout.LayoutParams(0, WRAP, 1f))
+            addView(durationText, LinearLayout.LayoutParams(dp(38), WRAP))
         }
-        buttonRow.addView(iconButton(android.R.drawable.ic_menu_preferences, 44) { showSettings() })
-        buttonRow.addView(iconButton(android.R.drawable.ic_menu_agenda, 44) { showLyricPicker() })
-        buttonRow.addView(spacer())
-        buttonRow.addView(iconButton(android.R.drawable.ic_media_previous, 56) { MediaHub.skipPrevious() })
-        playButton = iconButton(android.R.drawable.ic_media_play, 72) { MediaHub.togglePlayPause() }
-        buttonRow.addView(playButton)
-        buttonRow.addView(iconButton(android.R.drawable.ic_media_next, 56) { MediaHub.skipNext() })
-        buttonRow.addView(spacer())
-        buttonRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(44), 1) })
-        buttonRow.addView(iconButton(android.R.drawable.ic_menu_view, 44) { openSourceApp() })
-        panel.addView(buttonRow, LinearLayout.LayoutParams(WRAP, WRAP))
-        return panel
+
+        prevButton = iconButton(R.drawable.ic_fc_prev, 46, 26, "上一首") { MediaHub.skipPrevious() }
+        nextButton = iconButton(R.drawable.ic_fc_next, 46, 26, "下一首") { MediaHub.skipNext() }
+        playButton = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_fc_play)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            val pad = dp(14)
+            setPadding(pad, pad, pad, pad)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+            }
+            contentDescription = "播放／暫停"
+            setOnClickListener { MediaHub.togglePlayPause() }
+        }
+        lyricsButton = iconButton(R.drawable.ic_fc_lyrics, 40, 20, "換歌詞") { showLyricPicker() }.apply { alpha = 0.75f }
+        settingsButton = iconButton(R.drawable.ic_fc_tune, 40, 20, "設定") { showSettings() }.apply { alpha = 0.75f }
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            isClickable = true // taps on the card don't reach the gesture layer
+            elevation = dpf(8f)
+        }
+    }
+
+    private fun detach(view: View) {
+        (view.parent as? ViewGroup)?.removeView(view)
+    }
+
+    /** Phones get a stacked card; tablets and landscape get everything on one row. */
+    private fun arrangeCard() {
+        val widthDp = resources.configuration.screenWidthDp
+        val wide = widthDp >= 600
+        if (wide != cardWide) {
+            cardWide = wide
+            listOf(coverView, titleText, subtitleText, statusText, seekRow, prevButton, playButton, nextButton, lyricsButton, settingsButton)
+                .forEach(::detach)
+            card.removeAllViews()
+            val info = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(titleText, LinearLayout.LayoutParams(MATCH, WRAP))
+                addView(subtitleText, LinearLayout.LayoutParams(MATCH, WRAP))
+                addView(statusText, LinearLayout.LayoutParams(MATCH, WRAP))
+            }
+            val transport = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(prevButton)
+                addView(playButton, LinearLayout.LayoutParams(dp(54), dp(54)).apply { marginStart = dp(6); marginEnd = dp(6) })
+                addView(nextButton)
+            }
+            if (wide) {
+                card.setPadding(dp(16), dp(16), dp(14), dp(14))
+                val column = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(info, LinearLayout.LayoutParams(MATCH, WRAP))
+                    addView(seekRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(2) })
+                }
+                val extras = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(lyricsButton)
+                    addView(settingsButton)
+                }
+                card.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(coverView, LinearLayout.LayoutParams(dp(84), dp(84)))
+                    addView(column, LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginStart = dp(16); marginEnd = dp(8) })
+                    addView(transport)
+                    addView(extras, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = dp(6) })
+                }, LinearLayout.LayoutParams(MATCH, WRAP))
+            } else {
+                card.setPadding(dp(16), dp(16), dp(16), dp(10))
+                card.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(coverView, LinearLayout.LayoutParams(dp(64), dp(64)))
+                    addView(info, LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginStart = dp(14) })
+                }, LinearLayout.LayoutParams(MATCH, WRAP))
+                card.addView(seekRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
+                card.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(lyricsButton)
+                    addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
+                    addView(transport)
+                    addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
+                    addView(settingsButton)
+                }, LinearLayout.LayoutParams(MATCH, WRAP))
+            }
+        }
+        val screen = resources.displayMetrics.widthPixels
+        card.layoutParams = FrameLayout.LayoutParams(
+            (screen - dp(24)).coerceAtMost(dp(if (wide) 860 else 520)), WRAP,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+        ).apply { bottomMargin = dp(if (wide) 24 else 16) }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        arrangeCard()
+        tutorial?.let {
+            hideGestureTutorial(remember = false)
+            showGestureTutorial()
+        }
     }
 
     private fun timeLabel() = TextView(this).apply {
-        setTextColor(0xCCFFFFFF.toInt())
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        setTextColor(0x99FFFFFF.toInt())
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
         gravity = Gravity.CENTER
+        fontFeatureSettings = "tnum"
         text = formatTime(0)
     }
 
-    private fun spacer() = View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(20), 1) }
-
-    private fun iconButton(icon: Int, sizeDp: Int, onClick: () -> Unit) = ImageButton(this).apply {
+    private fun iconButton(icon: Int, sizeDp: Int, iconDp: Int, description: String, onClick: () -> Unit) = ImageButton(this).apply {
         setImageResource(icon)
         setColorFilter(Color.WHITE)
-        background = null
-        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-        val pad = dp(sizeDp / 6)
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.TRANSPARENT) }
+        foreground = rippleOval()
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        val pad = dp((sizeDp - iconDp) / 2)
         setPadding(pad, pad, pad, pad)
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
-        setOnClickListener {
-            onClick()
-            scheduleAutoHide()
+        contentDescription = description
+        setOnClickListener { onClick() }
+    }
+
+    private fun rippleOval() = android.graphics.drawable.RippleDrawable(
+        android.content.res.ColorStateList.valueOf(0x33FFFFFF),
+        null,
+        GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) },
+    )
+
+    /** Colours and cover from the current song. */
+    private fun applyCardLook() {
+        val palette = MediaHub.palette
+        if (palette != appliedPalette) {
+            appliedPalette = palette
+            card.background = GradientDrawable().apply {
+                cornerRadius = dpf(22f)
+                setColor((palette.card and 0xFFFFFF) or (0xE6 shl 24))
+                setStroke(dp(1), 0x1FFFFFFF)
+            }
+            playButton.setColorFilter(palette.card)
+            val radius = dpf(2f)
+            val track = LayerDrawable(arrayOf(
+                GradientDrawable().apply { cornerRadius = radius; setColor(0x33FFFFFF) },
+                ClipDrawable(GradientDrawable().apply { cornerRadius = radius; setColor(palette.highlight) }, Gravity.START, ClipDrawable.HORIZONTAL),
+            )).apply {
+                setId(0, android.R.id.background)
+                setId(1, android.R.id.progress)
+                for (i in 0..1) {
+                    setLayerHeight(i, dp(3))
+                    setLayerGravity(i, Gravity.CENTER_VERTICAL or Gravity.FILL_HORIZONTAL)
+                }
+            }
+            val progress = seekBar.progress
+            seekBar.progressDrawable = track
+            seekBar.thumb = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+                setSize(dp(12), dp(12))
+            }
+            seekBar.progress = progress
         }
+        val cover = MediaHub.coverBitmap
+        if (cover !== appliedCover || coverView.drawable == null) {
+            appliedCover = cover
+            if (cover != null) {
+                coverView.setImageBitmap(cover)
+                coverView.scaleType = ImageView.ScaleType.CENTER_CROP
+                coverView.setPadding(0, 0, 0, 0)
+                coverView.background = null
+            } else {
+                coverView.setImageResource(R.drawable.ic_fc_music)
+                coverView.scaleType = ImageView.ScaleType.FIT_CENTER
+                coverView.setColorFilter(0x80FFFFFF.toInt())
+                val pad = dp(18)
+                coverView.setPadding(pad, pad, pad, pad)
+                coverView.background = GradientDrawable().apply { setColor(0x1FFFFFFF) }
+            }
+            if (cover != null) coverView.clearColorFilter()
+        }
+    }
+
+    // ---------- gestures ----------
+
+    private inner class GestureListener : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent) = true
+
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            setControlsVisible(!controlsVisible)
+            return true
+        }
+
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            val willPlay = !MediaHub.isPlaying()
+            MediaHub.togglePlayPause()
+            showFeedback(if (willPlay) R.drawable.ic_fc_play else R.drawable.ic_fc_pause, if (willPlay) "播放" else "暫停", 0)
+            return true
+        }
+
+        override fun onLongPress(e: MotionEvent) {
+            gestureLayer.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            showLyricPicker()
+        }
+
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+            val start = e1 ?: return false
+            val dx = e2.x - start.x
+            val dy = e2.y - start.y
+            val minDistance = dpf(64f)
+            val minSpeed = dpf(250f)
+            when {
+                abs(dx) > minDistance && abs(dx) > abs(dy) * 1.3f && abs(velocityX) > minSpeed -> {
+                    if (dx < 0) {
+                        MediaHub.skipNext()
+                        showFeedback(R.drawable.ic_fc_next, "下一首", -1)
+                    } else {
+                        MediaHub.skipPrevious()
+                        showFeedback(R.drawable.ic_fc_prev, "上一首", 1)
+                    }
+                }
+                dy < -minDistance && abs(dy) > abs(dx) * 1.3f && abs(velocityY) > minSpeed -> showSettings()
+                else -> return false
+            }
+            return true
+        }
+    }
+
+    private fun buildFeedback(): LinearLayout {
+        feedbackIcon = ImageView(this).apply {
+            setColorFilter(Color.WHITE)
+            val pad = dp(24)
+            setPadding(pad, pad, pad, pad)
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x8C000000.toInt()) }
+        }
+        feedbackText = label(14f, Color.WHITE, bold = true).apply {
+            gravity = Gravity.CENTER
+            setShadowLayer(dpf(6f), 0f, 0f, 0xCC000000.toInt())
+            setPadding(0, dp(10), 0, 0)
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            visibility = View.GONE
+            addView(feedbackIcon, LinearLayout.LayoutParams(dp(88), dp(88)))
+            addView(feedbackText, LinearLayout.LayoutParams(WRAP, WRAP))
+        }
+    }
+
+    /** A short-lived icon in the middle of the screen confirming what a gesture did. [direction]: −1 left, 1 right. */
+    private fun showFeedback(icon: Int, text: String, direction: Int) {
+        feedbackIcon.setImageResource(icon)
+        feedbackText.text = text
+        feedback.animate().cancel()
+        feedback.visibility = View.VISIBLE
+        feedback.alpha = 0f
+        feedback.scaleX = 0.85f
+        feedback.scaleY = 0.85f
+        feedback.translationX = -direction * dpf(28f)
+        feedback.animate().alpha(1f).scaleX(1f).scaleY(1f).translationX(0f).setStartDelay(0).setDuration(160)
+            .withEndAction {
+                feedback.animate().alpha(0f).setStartDelay(450).setDuration(260)
+                    .withEndAction { feedback.visibility = View.GONE }.start()
+            }.start()
+    }
+
+    // ---------- gesture tutorial ----------
+
+    private fun showGestureTutorial() {
+        if (tutorial != null) return
+        val accent = MediaHub.palette.highlight
+        val wide = resources.configuration.screenWidthDp >= 600
+        val items = listOf(
+            Triple(GestureGuideView.Kind.TAP, "點一下", "顯示或收起資訊卡"),
+            Triple(GestureGuideView.Kind.DOUBLE_TAP, "點兩下", "播放／暫停"),
+            Triple(GestureGuideView.Kind.SWIPE_LEFT, "往左滑", "下一首"),
+            Triple(GestureGuideView.Kind.SWIPE_RIGHT, "往右滑", "上一首"),
+            Triple(GestureGuideView.Kind.SWIPE_UP, "往上滑", "打開設定"),
+            Triple(GestureGuideView.Kind.LONG_PRESS, "長按", "換歌詞"),
+        )
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(24), dp(36), dp(24), dp(36))
+        }
+        column.addView(label(24f, Color.WHITE, bold = true).apply {
+            text = "手勢操作"
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(MATCH, WRAP))
+        column.addView(TextView(this).apply {
+            text = "在歌詞畫面的任何地方都能用，不用找按鈕。"
+            setTextColor(0xA6FFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(20))
+        }, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        val perRow = if (wide) 2 else 1
+        items.chunked(perRow).forEach { row ->
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            row.forEach { (kind, name, action) ->
+                line.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(7), dp(12), dp(7))
+                    addView(GestureGuideView(context, kind, accent), LinearLayout.LayoutParams(dp(84), dp(68)))
+                    addView(LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(16), 0, 0, 0)
+                        addView(label(16f, Color.WHITE, bold = true).apply { text = name })
+                        addView(label(14f, 0xB3FFFFFF.toInt()).apply { text = action; setPadding(0, dp(4), 0, 0) })
+                    })
+                }, LinearLayout.LayoutParams(0, WRAP, 1f))
+            }
+            column.addView(line, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
+
+        column.addView(TextView(this).apply {
+            text = "從畫面中間開始滑，比較不會碰到系統的返回或回主畫面手勢。資訊卡上的按鈕一樣可以按。\n之後可以在「設定 → 手勢說明」再看一次。"
+            setTextColor(0x80FFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.25f)
+            setPadding(0, dp(20), 0, dp(24))
+        }, LinearLayout.LayoutParams(MATCH, WRAP))
+        column.addView(TextView(this).apply {
+            text = "開始使用"
+            setTextColor(0xFF111114.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            setPadding(dp(40), dp(13), dp(40), dp(13))
+            background = GradientDrawable().apply { cornerRadius = dpf(999f); setColor(Color.WHITE) }
+            foreground = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x22000000), null,
+                GradientDrawable().apply { cornerRadius = dpf(999f); setColor(Color.WHITE) },
+            )
+            setOnClickListener { hideGestureTutorial(remember = true) }
+        })
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(0xF00B0B0F.toInt())
+            isClickable = true
+            alpha = 0f
+            addView(FrameLayout(context).apply {
+                addView(column, FrameLayout.LayoutParams(
+                    (resources.displayMetrics.widthPixels).coerceAtMost(dp(if (wide) 760 else 480)), WRAP, Gravity.CENTER,
+                ))
+            }, FrameLayout.LayoutParams(MATCH, WRAP))
+        }
+        tutorial = scroll
+        rootLayout.addView(scroll, FrameLayout.LayoutParams(MATCH, MATCH))
+        scroll.animate().alpha(1f).setDuration(200).start()
+    }
+
+    private fun hideGestureTutorial(remember: Boolean) {
+        val view = tutorial ?: return
+        tutorial = null
+        if (remember) prefs.edit().putBoolean("gesture_tutorial_shown", true).apply()
+        view.animate().alpha(0f).setDuration(180).withEndAction { rootLayout.removeView(view) }.start()
+    }
+
+    @Deprecated("Activity's back handling without AndroidX.")
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (tutorial != null) hideGestureTutorial(remember = true) else super.onBackPressed()
     }
 
     private fun buildPermissionPanel(): LinearLayout = LinearLayout(this).apply {
@@ -397,13 +764,17 @@ class MainActivity : Activity() {
     }
 
     private fun updatePermissionState() {
-        val granted = MediaHub.hasNotificationAccess(this)
+        val demo = MediaHub.demo
+        val granted = demo || MediaHub.hasNotificationAccess(this)
         permissionPanel.visibility = if (granted) View.GONE else View.VISIBLE
-        if (granted) {
+        if (granted && !demo) {
             MediaHub.start()
             MediaHub.pushSnapshot()
         }
         refreshUi()
+        val wantTutorial = if (demo) intent.getBooleanExtra("tutorial", false)
+        else granted && !prefs.getBoolean("gesture_tutorial_shown", false)
+        if (wantTutorial) showGestureTutorial()
     }
 
     private fun openNotificationAccessSettings() {
@@ -436,11 +807,17 @@ class MainActivity : Activity() {
     private fun refreshUi() {
         val info = MediaHub.track
         titleText.text = info?.title?.takeIf { it.isNotBlank() } ?: "沒有正在播放的音樂"
-        subtitleText.text = listOfNotNull(info?.artist?.takeIf { it.isNotBlank() }, MediaHub.sourceAppLabel())
-            .joinToString(" · ")
-            .ifEmpty { "先在 Spotify 或 YouTube Music 播放一首歌" }
+        subtitleText.text = when {
+            info == null -> "先在 Spotify 或 YouTube Music 播放一首歌"
+            else -> listOf(info.artist, info.album).filter { it.isNotBlank() }.joinToString(" · ")
+                .ifEmpty { MediaHub.sourceAppLabel() ?: "" }
+        }
         statusText.text = MediaHub.lyricStatus
-        playButton.setImageResource(if (MediaHub.isPlaying()) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+        statusText.visibility = if (MediaHub.lyricStatus.isBlank()) View.GONE else View.VISIBLE
+        val playing = MediaHub.isPlaying()
+        playButton.setImageResource(if (playing) R.drawable.ic_fc_pause else R.drawable.ic_fc_play)
+        playButton.contentDescription = if (playing) "暫停" else "播放"
+        applyCardLook()
         updateProgressUi()
     }
 
@@ -462,24 +839,16 @@ class MainActivity : Activity() {
 
     private fun setControlsVisible(visible: Boolean) {
         controlsVisible = visible
-        handler.removeCallbacks(autoHide)
-        controls.animate().cancel()
+        card.animate().cancel()
         if (visible) {
-            controls.visibility = View.VISIBLE
-            controls.animate().alpha(1f).setDuration(180).start()
-            scheduleAutoHide()
+            card.visibility = View.VISIBLE
+            updateProgressUi()
+            card.animate().alpha(1f).translationY(0f).setDuration(200).start()
         } else {
-            controls.animate().alpha(0f).setDuration(300).withEndAction {
-                if (!controlsVisible) controls.visibility = View.INVISIBLE
+            card.animate().alpha(0f).translationY(dpf(24f)).setDuration(220).withEndAction {
+                if (!controlsVisible) card.visibility = View.INVISIBLE
             }.start()
         }
-    }
-
-    private fun showControlsBriefly() = setControlsVisible(true)
-
-    private fun scheduleAutoHide() {
-        handler.removeCallbacks(autoHide)
-        if (controlsVisible && !userSeeking) handler.postDelayed(autoHide, AUTO_HIDE_MS)
     }
 
     // ---------- settings ----------
@@ -539,7 +908,6 @@ class MainActivity : Activity() {
     // ---------- lyric picker ----------
 
     private fun showLyricPicker() {
-        handler.removeCallbacks(autoHide)
         val track = MediaHub.track
         if (track == null) {
             android.widget.Toast.makeText(this, "現在沒有正在播放的歌曲", android.widget.Toast.LENGTH_SHORT).show()
@@ -578,7 +946,7 @@ class MainActivity : Activity() {
         val builder = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("換歌詞：${track.title}")
             .setNegativeButton("這首不顯示歌詞") { _, _ -> MediaHub.chooseNone() }
-            .setOnDismissListener { enterImmersive(); scheduleAutoHide() }
+            .setOnDismissListener { enterImmersive() }
         if (shown.isEmpty()) builder.setMessage("每個來源都找不到這首歌。")
         else builder.setItems(labels) { _, which ->
             val chosen = shown[which]
@@ -695,7 +1063,6 @@ class MainActivity : Activity() {
     private fun onOff(key: String, default: Boolean) = if (prefs.getBoolean(key, default)) "開" else "關"
 
     private fun showSettings() {
-        handler.removeCallbacks(autoHide)
         val mode = prefs.getString("mode", "classic")
         val modeLabel = MODES.firstOrNull { it.id == mode }?.label ?: mode
         val offset = prefs.getLong("offset", 0L)
@@ -710,6 +1077,7 @@ class MainActivity : Activity() {
             "歌詞時間偏移：${if (offset > 0) "+" else ""}${offset} ms",
             "保持螢幕常亮：${onOff("keep_screen_on", true)}",
             "本機歌詞資料夾：${LocalLyrics.folderLabel ?: "未設定"}",
+            "手勢說明",
             "重新載入畫面",
         )
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
@@ -726,10 +1094,11 @@ class MainActivity : Activity() {
                     7 -> pickOffset()
                     8 -> { toggle("keep_screen_on", true); applyKeepScreenOn(); showSettings() }
                     9 -> pickLyricsFolder()
-                    10 -> loadFolia()
+                    10 -> showGestureTutorial()
+                    11 -> loadFolia()
                 }
             }
-            .setOnDismissListener { enterImmersive(); scheduleAutoHide() }
+            .setOnDismissListener { enterImmersive() }
             .show()
     }
 

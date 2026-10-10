@@ -55,6 +55,12 @@ object MediaHub {
 
     private var coverDataUrl: String? = null
     private var coverSource: Bitmap? = null
+
+    /** The cover for the info card (small copy), and the card colours taken from it. */
+    var coverBitmap: Bitmap? = null
+        private set
+    var palette: CoverPalette = CoverPalette.NEUTRAL
+        private set
     private var lyricResult: LyricResult? = null
 
     @Volatile
@@ -121,7 +127,7 @@ object MediaHub {
     }
 
     fun start() {
-        if (!::appContext.isInitialized) return
+        if (!::appContext.isInitialized || demo) return
         if (started) {
             refreshSessions()
             return
@@ -218,6 +224,8 @@ object MediaHub {
                 track = null
                 coverDataUrl = null
                 coverSource = null
+                coverBitmap = null
+                palette = CoverPalette.NEUTRAL
                 lyricResult = null
                 lyricContainer = null
                 lyricCandidates = emptyList()
@@ -251,6 +259,8 @@ object MediaHub {
         if (songChanged) {
             coverDataUrl = null
             coverSource = null
+            coverBitmap = null
+            palette = CoverPalette.NEUTRAL
             lyricResult = null
             lyricContainer = null
             lyricCandidates = emptyList()
@@ -280,6 +290,8 @@ object MediaHub {
 
     private fun encodeCover(bitmap: Bitmap, key: String) {
         coverExecutor.execute {
+            var thumb: Bitmap? = null
+            var colours = CoverPalette.NEUTRAL
             val url = try {
                 val maxSide = 600
                 val scale = minOf(1f, maxSide.toFloat() / maxOf(bitmap.width, bitmap.height))
@@ -288,6 +300,11 @@ object MediaHub {
                 } else bitmap
                 val out = ByteArrayOutputStream()
                 scaled.compress(Bitmap.CompressFormat.JPEG, 88, out)
+                thumb = scaledCopy(scaled, 256)
+                val tiny = Bitmap.createScaledBitmap(scaled, 32, 32, true)
+                val pixels = IntArray(32 * 32)
+                tiny.getPixels(pixels, 0, 32, 0, 0, 32, 32)
+                colours = CoverPalette.from(pixels)
                 "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
             } catch (_: Throwable) {
                 null
@@ -295,11 +312,19 @@ object MediaHub {
             main.post {
                 if (url != null && track?.key == key && url != coverDataUrl) {
                     coverDataUrl = url
+                    coverBitmap = thumb
+                    palette = colours
                     pushTrack()
                     notifyUi()
                 }
             }
         }
+    }
+
+    private fun scaledCopy(bitmap: Bitmap, maxSide: Int): Bitmap {
+        val scale = minOf(1f, maxSide.toFloat() / maxOf(bitmap.width, bitmap.height))
+        val copy = Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1), (bitmap.height * scale).toInt().coerceAtLeast(1), true)
+        return if (copy === bitmap) bitmap.copy(Bitmap.Config.ARGB_8888, false) else copy
     }
 
     private fun startLyricLookup(info: TrackInfo) {
@@ -422,10 +447,11 @@ object MediaHub {
 
     // ---------- playback state ----------
 
-    fun isPlaying(): Boolean = current?.playbackState?.state == PlaybackState.STATE_PLAYING
+    fun isPlaying(): Boolean = if (demo) demoPlaying else current?.playbackState?.state == PlaybackState.STATE_PLAYING
 
     /** The player's position right now, extrapolated from its last report. */
     fun positionMs(): Long {
+        if (demo) return demoPositionMs()
         val state = current?.playbackState ?: return 0L
         var position = state.position
         if (state.state == PlaybackState.STATE_PLAYING && state.lastPositionUpdateTime > 0) {
@@ -446,6 +472,13 @@ object MediaHub {
     // ---------- controls ----------
 
     fun togglePlayPause() {
+        if (demo) {
+            demoBaseMs = demoPositionMs()
+            demoSince = SystemClock.elapsedRealtime()
+            demoPlaying = !demoPlaying
+            onPlayback()
+            return
+        }
         val controller = current ?: return
         if (isPlaying()) controller.transportControls.pause() else controller.transportControls.play()
     }
@@ -463,6 +496,7 @@ object MediaHub {
     }
 
     fun sourceAppLabel(): String? {
+        if (demo) return "示範"
         val pkg = current?.packageName ?: return null
         return try {
             val pm = appContext.packageManager
@@ -475,6 +509,35 @@ object MediaHub {
     fun sourceAppLaunchIntent(): Intent? {
         val pkg = current?.packageName ?: return null
         return appContext.packageManager.getLaunchIntentForPackage(pkg)
+    }
+
+    // ---------- preview without a player (CI screenshots) ----------
+
+    var demo = false
+        private set
+    private var demoPlaying = true
+    private var demoBaseMs = 0L
+    private var demoSince = 0L
+
+    private fun demoPositionMs(): Long {
+        val elapsed = if (demoPlaying) SystemClock.elapsedRealtime() - demoSince else 0L
+        return (demoBaseMs + elapsed) % DemoSong.DURATION_MS
+    }
+
+    /** Shows [DemoSong] with [cover] as if a player were playing it. */
+    fun startDemo(cover: Bitmap) {
+        stop()
+        demo = true
+        demoPlaying = true
+        demoBaseMs = DemoSong.START_MS
+        demoSince = SystemClock.elapsedRealtime()
+        lyricRequestId++
+        track = TrackInfo("demo", null, "示範歌曲", "Folia 控制器", "介面預覽", DemoSong.DURATION_MS, "demo")
+        coverSource = cover
+        encodeCover(cover, "demo")
+        noLyricsChosen = false
+        setLyrics(LyricResult(DemoSong.doc(), LyricCandidate("local", "demo", "示範歌曲", "Folia 控制器", "", DemoSong.DURATION_MS)))
+        pushSnapshot()
     }
 
     // ---------- events for Folia ----------

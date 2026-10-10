@@ -36,6 +36,8 @@ internal sealed class MediaHub
     private int _coverId;
     private int _coverVersionLoaded = -1;
     private int _coverLoading;
+    private CoverPalette _palette = CoverPalette.Neutral;
+    private LyricDoc? _displayDoc;
 
     private long _lastSentClockMs;
     private long _lastSentAt;
@@ -47,6 +49,8 @@ internal sealed class MediaHub
     public Func<(bool Enabled, string[] Urls)> LanInfo { get; set; } = () => (false, Array.Empty<string>());
     /// <summary>Track or playing state changed (for the tray tooltip).</summary>
     public event Action? TrackChanged;
+    /// <summary>Anything the desktop lyrics show changed: song, lyrics, cover, play / pause, a jump in position.</summary>
+    public event Action? DisplayChanged;
 
     public MediaHub(IMediaSource source, AppSettings settings)
     {
@@ -81,6 +85,7 @@ internal sealed class MediaHub
                 _noLyricsChosen = false;
                 _lyricStatus = "";
                 _cover = null;
+                _palette = CoverPalette.Neutral;
                 _coverVersionLoaded = -1;
                 CancelLyricLookup();
                 outgoing.Add(TrackEvent());
@@ -103,6 +108,7 @@ internal sealed class MediaHub
                     _candidatesSearched = false;
                     _noLyricsChosen = false;
                     _cover = null;
+                    _palette = CoverPalette.Neutral;
                     _coverVersionLoaded = -1;
                     StartLyricLookup(snap, key);
                 }
@@ -139,6 +145,7 @@ internal sealed class MediaHub
         }
         foreach (var message in outgoing) Broadcast(message);
         if (trackChanged) TrackChanged?.Invoke();
+        if (outgoing.Count > 0) DisplayChanged?.Invoke();
     }
 
     private static long ElapsedMsSince(long stopwatchTimestamp) =>
@@ -211,6 +218,7 @@ internal sealed class MediaHub
             }
             Broadcast(lyricEvent);
             Broadcast(stateEvent);
+            DisplayChanged?.Invoke();
         });
     }
 
@@ -218,6 +226,7 @@ internal sealed class MediaHub
     {
         _lyric = result;
         _lyricContainer = null;
+        _displayDoc = null;
         _lyricStatus = _noLyricsChosen ? "已設定這首歌不顯示歌詞"
             : result == null ? "找不到同步歌詞"
             : $"歌詞：{result.SourceLabel}";
@@ -363,6 +372,7 @@ internal sealed class MediaHub
         }
         Broadcast(lyricEvent);
         Broadcast(stateEvent);
+        DisplayChanged?.Invoke();
     }
 
     // ---------- cover art ----------
@@ -377,7 +387,7 @@ internal sealed class MediaHub
                 // Artwork often lands a moment after the title; give it that moment.
                 await Task.Delay(150);
                 var cover = await _source.ReadCoverAsync();
-                string? trackEvent = null;
+                string? trackEvent = null, stateEvent = null;
                 lock (_gate)
                 {
                     if (key != _trackKey) return;
@@ -387,10 +397,17 @@ internal sealed class MediaHub
                         _cover = cover.Value.Data;
                         _coverMime = cover.Value.Mime;
                         _coverId++;
+                        _palette = CoverPalette.FromImage(_cover);
                         trackEvent = TrackEvent();
+                        stateEvent = ControllerStateEvent();
                     }
                 }
-                if (trackEvent != null) Broadcast(trackEvent);
+                if (trackEvent != null)
+                {
+                    Broadcast(trackEvent);
+                    Broadcast(stateEvent!);
+                    DisplayChanged?.Invoke();
+                }
             }
             catch (Exception ex)
             {
@@ -428,7 +445,11 @@ internal sealed class MediaHub
             {
                 lyricChanged |= _settings.Traditional != tr.GetBoolean();
                 _settings.Traditional = tr.GetBoolean();
-                if (lyricChanged) _lyricContainer = null;
+                if (lyricChanged)
+                {
+                    _lyricContainer = null;
+                    _displayDoc = null;
+                }
             }
             if (body.TryGetProperty("offsetMs", out var o) && o.ValueKind == JsonValueKind.Number && o.TryGetInt32(out var offset))
             {
@@ -446,6 +467,34 @@ internal sealed class MediaHub
         }
         _settings.Save();
         foreach (var message in outgoing) Broadcast(message);
+        DisplayChanged?.Invoke();
+    }
+
+    // ---------- desktop lyrics ----------
+
+    /// <summary>What the desktop lyrics window draws (the lyrics already converted to Traditional when that's on).</summary>
+    public DisplayState GetDisplay()
+    {
+        lock (_gate)
+        {
+            var snap = _snap;
+            if (_lyric != null && _displayDoc == null)
+            {
+                var doc = _lyric.Doc;
+                _displayDoc = _settings.Traditional && !LyricFormats.HasKana(doc)
+                    ? LyricFormats.ConvertChinese(doc, ChineseConverter.ToTraditional)
+                    : doc;
+            }
+            return new DisplayState(
+                snap != null, snap?.Title ?? "", snap?.Artist ?? "", snap?.Playing ?? false,
+                _lyric == null ? null : _displayDoc, _palette, _coverId);
+        }
+    }
+
+    /// <summary>The lyric clock right now (player position minus the offset setting).</summary>
+    public long LyricClockMs()
+    {
+        lock (_gate) return ClockMs();
     }
 
     /// <summary>Everything a freshly connected page needs, in order.</summary>
@@ -549,6 +598,8 @@ internal sealed class MediaHub
             ["app"] = snap?.AppName ?? "",
             ["title"] = snap?.Title ?? "",
             ["artist"] = snap?.Artist ?? "",
+            ["album"] = snap?.Album ?? "",
+            ["cover"] = _cover != null ? $"/api/cover/{_coverId}" : null,
             ["playing"] = snap?.Playing ?? false,
             ["positionMs"] = snap?.LivePositionMs() ?? 0,
             ["durationMs"] = snap?.DurationMs ?? 0,
@@ -565,3 +616,5 @@ internal sealed class MediaHub
         return Envelope("ControllerState", data);
     }
 }
+
+internal sealed record DisplayState(bool HasSession, string Title, string Artist, bool Playing, LyricDoc? Doc, CoverPalette Palette, int CoverId);

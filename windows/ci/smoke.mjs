@@ -86,6 +86,8 @@ if (cover) {
 }
 const state = lastOf('ControllerState');
 console.log('lyric status:', state?.lyricStatus);
+check(state?.album === '葉惠美', 'album in control state', JSON.stringify(state?.album));
+check(typeof state?.cover === 'string' && state.cover.startsWith('/api/cover/'), 'cover in control state', JSON.stringify(state?.cover));
 const lyric = lastOf('Lyric');
 const container = lyric?.lrc || '';
 const tracks = Object.fromEntries((container.match(/^\[awlrc:(.+)\]$/)?.[1] || '').split(',').map((part) => {

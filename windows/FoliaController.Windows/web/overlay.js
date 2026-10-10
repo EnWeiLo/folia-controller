@@ -97,22 +97,96 @@
     shrink: 'M7 4h2v4a1 1 0 0 1-1 1H4V7h3V4zm8 0h2v3h3v2h-4a1 1 0 0 1-1-1V4zM4 15h4a1 1 0 0 1 1 1v4H7v-3H4v-2zm12 0h4v2h-3v3h-2v-4a1 1 0 0 1 1-1z',
     close: 'M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z',
     lyrics: 'M4 6h12v2H4V6zm0 4h12v2H4v-2zm0 4h8v2H4v-2zm14-1.5V5h4v2h-2v7.5a2.5 2.5 0 1 1-2-2.45z',
+    desktop: 'M5 3h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6v2h3v2H8v-2h3v-2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v10h14V5H5zm2 3h10v2H7V8zm2 3h6v2H9v-2z',
+    note: 'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z',
   };
   function icon(name) {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + ICONS[name] + '"/></svg>';
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="' + ICONS[name] + '"/></svg>';
+  }
+
+  // ---------- colours from the album cover ----------
+  // Same maths as CoverPalette.kt / CoverPalette.cs: a dark tint for the card, a light one for progress.
+  function hsvToRgb(h, s, v) {
+    var c = v * s, hp = (h % 360) / 60, x = c * (1 - Math.abs(hp % 2 - 1)), m = v - c, r = 0, g = 0, b = 0;
+    if (hp < 1) { r = c; g = x; } else if (hp < 2) { r = x; g = c; } else if (hp < 3) { g = c; b = x; }
+    else if (hp < 4) { g = x; b = c; } else if (hp < 5) { r = x; b = c; } else { r = c; b = x; }
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+  function paletteFrom(data) {
+    var x = 0, y = 0, weight = 0, satSum = 0, n = data.length / 4;
+    for (var i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 128) continue;
+      var r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+      var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+      if (mx < 0.15) continue;
+      var s = mx === 0 ? 0 : d / mx;
+      var w = s * s * mx;
+      if (w <= 0) continue;
+      var h = d === 0 ? 0 : mx === r ? 60 * (((g - b) / d) % 6) : mx === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4);
+      if (h < 0) h += 360;
+      x += Math.cos(h * Math.PI / 180) * w;
+      y += Math.sin(h * Math.PI / 180) * w;
+      weight += w;
+      satSum += s * w;
+    }
+    if (weight < n * 0.02) return null;
+    var hue = Math.atan2(y, x) * 180 / Math.PI;
+    if (hue < 0) hue += 360;
+    var sat = satSum / weight, agreement = Math.sqrt(x * x + y * y) / weight;
+    if (agreement < 0.25) return null;
+    return {
+      card: hsvToRgb(hue, Math.min(0.55, sat * 0.8) * Math.min(1, agreement * 1.4), 0.2),
+      highlight: hsvToRgb(hue, Math.min(0.6, Math.max(0.35, sat * 0.9)), 0.97),
+    };
+  }
+  var paletteFor = '';
+  function applyCover(url) {
+    var img = $('fc-cover-img');
+    var box = $('fc-cover');
+    if (!url) {
+      box.classList.remove('fc-has-cover');
+      img.removeAttribute('src');
+      setPalette(null);
+      paletteFor = '';
+      return;
+    }
+    if (img.getAttribute('src') !== url) img.setAttribute('src', url);
+    box.classList.add('fc-has-cover');
+    if (paletteFor === url) return;
+    paletteFor = url;
+    var probe = new Image();
+    probe.onload = function () {
+      if (paletteFor !== url) return;
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = 32;
+        canvas.height = 32;
+        var ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(probe, 0, 0, 32, 32);
+        setPalette(paletteFrom(ctx.getImageData(0, 0, 32, 32).data));
+      } catch (e) { setPalette(null); }
+    };
+    probe.src = url;
+  }
+  function setPalette(p) {
+    var card = p ? p.card : [28, 28, 33];
+    var hl = p ? p.highlight : [232, 228, 216];
+    root.style.setProperty('--card-rgb', card.join(','));
+    root.style.setProperty('--hl', 'rgb(' + hl.join(',') + ')');
   }
 
   // ---------- state from the computer ----------
   var state = {
     connected: false,     // our socket to the helper program
     hasSession: false,    // a player is reporting to Windows
-    app: '', title: '', artist: '', playing: false,
+    app: '', title: '', artist: '', album: '', cover: '', playing: false,
     positionMs: 0, durationMs: 0, canSeek: false, lyricStatus: '',
     settings: { translation: true, traditional: true, offsetMs: 0 },
     lan: { enabled: false, urls: [] },
     receivedAt: 0,
   };
   var fullscreen = false;
+  var desktopLyrics = false;
 
   function livePosition() {
     var pos = state.positionMs;
@@ -122,7 +196,7 @@
   }
 
   // ---------- UI ----------
-  var root, bar, seek, seeking = false, panelOpen = false, hideTimer = 0;
+  var root, bar, seek, seeking = false, panelOpen = false, cardOpen = true, clickTimer = 0, idleTimer = 0;
 
   function build() {
     root = document.createElement('div');
@@ -130,7 +204,10 @@
     root.innerHTML =
       '<div id="fc-fps" aria-hidden="true"></div>' +
       '<div id="fc-notice" role="status"></div>' +
-      '<div id="fc-bar">' +
+      '<div id="fc-bar" role="region" aria-label="正在播放">' +
+        '<button id="fc-cover" title="切換到播放器" aria-label="切換到播放器">' +
+          '<img id="fc-cover-img" alt="">' + '<span class="fc-cover-ph">' + icon('note') + '</span>' +
+        '</button>' +
         '<div class="fc-info">' +
           '<div id="fc-title"></div>' +
           '<div id="fc-sub"></div>' +
@@ -139,15 +216,17 @@
         '<div class="fc-seek"><span id="fc-pos">0:00</span>' +
           '<input id="fc-seekbar" type="range" min="0" max="1" step="250" value="0" aria-label="播放進度">' +
           '<span id="fc-dur">0:00</span></div>' +
-        '<div class="fc-buttons">' +
-          '<button class="fc-btn fc-small" id="fc-settings" title="設定" aria-label="設定">' + icon('gear') + '</button>' +
-          '<button class="fc-btn fc-small" id="fc-lyrics" title="換歌詞（L）" aria-label="換歌詞">' + icon('lyrics') + '</button>' +
-          '<span class="fc-gap"></span>' +
-          '<button class="fc-btn" id="fc-prev" title="上一首" aria-label="上一首">' + icon('prev') + '</button>' +
+        '<div class="fc-transport">' +
+          '<button class="fc-btn" id="fc-prev" title="上一首（P）" aria-label="上一首">' + icon('prev') + '</button>' +
           '<button class="fc-btn fc-big" id="fc-play" title="播放／暫停（空白鍵）" aria-label="播放">' + icon('play') + '</button>' +
-          '<button class="fc-btn" id="fc-next" title="下一首" aria-label="下一首">' + icon('next') + '</button>' +
-          '<span class="fc-gap"></span>' +
-          '<span class="fc-btn-spacer"></span>' +
+          '<button class="fc-btn" id="fc-next" title="下一首（N）" aria-label="下一首">' + icon('next') + '</button>' +
+        '</div>' +
+        '<div class="fc-extras fc-extras-a">' +
+          '<button class="fc-btn fc-small" id="fc-lyrics" title="換歌詞（L）" aria-label="換歌詞">' + icon('lyrics') + '</button>' +
+          (webview ? '<button class="fc-btn fc-small" id="fc-desktop" title="桌面歌詞（D）" aria-label="桌面歌詞" aria-pressed="false">' + icon('desktop') + '</button>' : '') +
+        '</div>' +
+        '<div class="fc-extras fc-extras-b">' +
+          '<button class="fc-btn fc-small" id="fc-settings" title="設定" aria-label="設定">' + icon('gear') + '</button>' +
           '<button class="fc-btn fc-small" id="fc-full" title="全螢幕（F11）" aria-label="全螢幕">' + icon('expand') + '</button>' +
         '</div>' +
       '</div>' +
@@ -156,10 +235,15 @@
       '<div id="fc-picker" class="fc-sheet" role="dialog" aria-label="換歌詞"></div>' +
       '<div id="fc-toast" role="status"></div>';
     document.body.appendChild(root);
+    if (isMobile) root.classList.add('fc-touch');
+    if (qualityId() === 'smooth') document.documentElement.classList.add('fc-lowfx');
     applyUiScale();
 
     bar = $('fc-bar');
     seek = $('fc-seekbar');
+    setPalette(null);
+    layoutCard();
+    window.addEventListener('resize', layoutCard);
     $('fc-play').onclick = function () {
       state.playing = !state.playing; // optimistic
       state.positionMs = livePosition();
@@ -175,6 +259,9 @@
     $('fc-lyric-status').onclick = function () { openPicker(true); };
     $('fc-scrim').onclick = function () { openPanel(false); openPicker(false); };
     $('fc-title').onclick = function () { hostMessage({ type: 'focusPlayer' }); };
+    $('fc-cover').onclick = function () { hostMessage({ type: 'focusPlayer' }); };
+    if ($('fc-desktop')) $('fc-desktop').onclick = function () { hostMessage({ type: 'desktopLyrics' }); };
+    if (!webview) $('fc-cover').title = '';
 
     seek.addEventListener('input', function () {
       seeking = true;
@@ -187,24 +274,24 @@
       state.positionMs = target;
       state.receivedAt = performance.now();
       post('/api/control', { action: 'seek', positionMs: Math.round(target) });
-      scheduleHide();
     });
 
-    // Mouse: any movement shows the bar, which hides again after a few idle seconds.
-    // Touch: a tap toggles it (Folia's page itself needs no touch input).
+    // The card stays until a click / tap on the lyrics hides it, and the next one brings it back.
+    // A double click is full screen, so a single click waits a moment to be sure it isn't one.
     document.addEventListener('pointermove', function (e) {
-      if (e.pointerType === 'mouse') show();
+      if (e.pointerType === 'mouse') wake();
     }, { passive: true });
     document.addEventListener('pointerup', function (e) {
-      if (e.pointerType === 'mouse' || panelOpen || pickerOpen) return;
-      if (bar.contains(e.target)) { scheduleHide(); return; }
-      if (root.classList.contains('fc-show')) hide(); else show();
+      if (e.button > 0 || panelOpen || pickerOpen) return;
+      if (bar.contains(e.target) || $('fc-panel').contains(e.target) || $('fc-picker').contains(e.target)) return;
+      clearTimeout(clickTimer);
+      clickTimer = setTimeout(function () { setCard(!cardOpen); }, e.pointerType === 'mouse' ? 240 : 0);
     });
     document.addEventListener('dblclick', function (e) {
-      if (!bar.contains(e.target) && !$('fc-panel').contains(e.target) && !$('fc-picker').contains(e.target)) toggleFullscreen();
+      if (bar.contains(e.target) || $('fc-panel').contains(e.target) || $('fc-picker').contains(e.target)) return;
+      clearTimeout(clickTimer);
+      toggleFullscreen();
     });
-    bar.addEventListener('pointerenter', function () { clearTimeout(hideTimer); });
-    bar.addEventListener('pointerleave', function () { scheduleHide(); });
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('fullscreenchange', function () {
       if (!webview) { fullscreen = !!document.fullscreenElement; render(); }
@@ -215,30 +302,36 @@
 
     renderPanel();
     render();
-    show();
+    setCard(true);
+    wake();
     setInterval(tick, 250);
     if (store.get('fps', false)) startFps();
   }
 
   function applyUiScale() {
-    if (root) root.style.setProperty('--u', uiScale + 'px');
+    if (!root) return;
+    root.style.setProperty('--u', uiScale + 'px');
+    layoutCard();
   }
 
-  function show() {
-    root.classList.add('fc-show');
+  function setCard(open) {
+    cardOpen = open;
+    root.classList.toggle('fc-show', open);
+    if (!open && document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
+    if (open) tick();
+  }
+  // Only the mouse pointer hides itself when idle; the card stays.
+  function wake() {
     document.documentElement.classList.remove('fc-idle');
-    tick();
-    scheduleHide();
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () {
+      if (!panelOpen && !pickerOpen && !seeking) document.documentElement.classList.add('fc-idle');
+    }, 3000);
   }
-  function hide() {
-    if (panelOpen || pickerOpen || seeking) return;
-    root.classList.remove('fc-show');
-    document.documentElement.classList.add('fc-idle');
-    if (document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
-  }
-  function scheduleHide() {
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(hide, 3000);
+  // Phones, tablets in portrait and small windows get the stacked card.
+  function layoutCard() {
+    if (!root) return;
+    root.classList.toggle('fc-narrow', window.innerWidth / uiScale < 760);
   }
 
   function onKey(e) {
@@ -275,6 +368,10 @@
       case 'l':
         openPicker(!pickerOpen);
         break;
+      case 'd':
+        if (!webview) { handled = false; break; }
+        hostMessage({ type: 'desktopLyrics' });
+        break;
       case 'Escape':
         if (pickerOpen) openPicker(false);
         else if (panelOpen) openPanel(false);
@@ -287,7 +384,7 @@
     if (handled) {
       e.preventDefault();
       e.stopPropagation();
-      show();
+      wake();
     }
   }
 
@@ -327,11 +424,16 @@
     }
 
     $('fc-title').textContent = state.hasSession && state.title ? state.title : '沒有正在播放的音樂';
+    $('fc-title').title = state.hasSession && state.app ? '正在 ' + state.app + ' 播放' : '';
     var sub = [];
     if (state.hasSession && state.artist) sub.push(state.artist);
-    if (state.hasSession && state.app) sub.push(state.app);
+    if (state.hasSession && state.album) sub.push(state.album);
+    if (!sub.length && state.hasSession && state.app) sub.push(state.app);
     $('fc-sub').textContent = sub.length ? sub.join(' · ') : '在 Spotify、YouTube Music 等播放器播一首歌';
     $('fc-lyric-status').textContent = state.lyricStatus || '';
+    applyCover(state.hasSession ? state.cover : '');
+    var desk = $('fc-desktop');
+    if (desk) desk.setAttribute('aria-pressed', desktopLyrics ? 'true' : 'false');
 
     var play = $('fc-play');
     play.innerHTML = icon(state.playing ? 'pause' : 'play');
@@ -378,7 +480,7 @@
       '<div class="fc-section">其他裝置</div>' +
       '<div class="fc-note" id="fc-lan"></div>' +
       '<div class="fc-section">快捷鍵</div>' +
-      '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · L 換歌詞 · F 或雙擊 全螢幕 · Esc 離開</div>';
+      '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · L 換歌詞' + (webview ? ' · D 桌面歌詞' : '') + ' · F 或雙擊 全螢幕 · 點一下歌詞 收起／打開資訊卡 · Esc 離開</div>';
 
     $('fc-close').onclick = function () { openPanel(false); };
     $('fc-mode').onchange = function () { store.set('mode', this.value); reloadWithSettings(); };
@@ -434,10 +536,7 @@
     root.classList.toggle('fc-panel-open', open);
     if (open) {
       syncPanel();
-      show();
-      clearTimeout(hideTimer);
-    } else {
-      scheduleHide();
+      wake();
     }
   }
 
@@ -464,11 +563,8 @@
     pickerOpen = open;
     root.classList.toggle('fc-picker-open', open);
     if (open) {
-      show();
-      clearTimeout(hideTimer);
+      wake();
       loadCandidates();
-    } else {
-      scheduleHide();
     }
   }
 
@@ -591,6 +687,8 @@
       state.app = d.app || '';
       state.title = d.title || '';
       state.artist = d.artist || '';
+      state.album = d.album || '';
+      state.cover = d.cover || '';
       state.playing = !!d.playing;
       state.positionMs = Number(d.positionMs) || 0;
       state.durationMs = Number(d.durationMs) || 0;
@@ -628,6 +726,7 @@
       if (m.type === 'host') {
         if (typeof m.zoom === 'number' && m.zoom > 0) uiScale = 1 / m.zoom;
         if (typeof m.fullscreen === 'boolean') fullscreen = m.fullscreen;
+        if (typeof m.desktopLyrics === 'boolean') desktopLyrics = m.desktopLyrics;
         applyUiScale();
         render();
       } else if (m.type === 'resync') {

@@ -171,6 +171,14 @@ jobs:
           Get-Content reports/fixtures.txt
           if ($p.ExitCode -ne 0) { throw "lyric fixtures differ from the Android output" }
 
+      - name: Desktop lyrics sample picture
+        run: |
+          $out = Join-Path $PWD 'reports/desktop-lyrics.png'
+          $p = Start-Process -FilePath out/win/FoliaController.exe -ArgumentList '--render-desktop-lyrics', $out -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $out)) { throw "desktop lyrics drawing failed (code $($p.ExitCode))" }
+          $errors = Join-Path $env:LOCALAPPDATA 'FoliaController\error.log'
+          if (Test-Path $errors) { Get-Content $errors }
+
       - name: Smoke test (real server, fake player)
         run: |
           npm install --prefix windows/ci --no-audit --no-fund --silent playwright-core@1.48.2
@@ -231,10 +239,48 @@ jobs:
           name: windows
           path: dist/*.exe
 
-  # Test results and screenshots from both builds, on a branch so they can be read without the
+  # The APK on an emulator with a made-up song (`--ez demo true`): screenshots of the info card
+  # (phone and tablet) and the gesture tutorial, to check the layout by eye.
+  android-ui:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Screenshots on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash ci/android-screenshots.sh apk android-ui
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-ui
+          path: android-ui/
+          retention-days: 7
+
+  # Test results and screenshots from every build, on a branch so they can be read without the
   # artifact storage (some networks can't reach it).
   reports:
-    needs: [android, windows]
+    needs: [android, windows, android-ui]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -248,13 +294,18 @@ jobs:
         with:
           name: android-reports
           path: reports/android
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: android-ui
+          path: reports/android-ui
       - name: Publish to the ci-reports branch
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p reports
           cd reports
-          echo "run ${{ github.run_number }} · ${{ github.sha }} · $(date -u +%FT%TZ) · android=${{ needs.android.result }} windows=${{ needs.windows.result }}" > RUN.txt
+          echo "run ${{ github.run_number }} · ${{ github.sha }} · $(date -u +%FT%TZ) · android=${{ needs.android.result }} android-ui=${{ needs.android-ui.result }} windows=${{ needs.windows.result }}" > RUN.txt
           git init -q -b ci-reports
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"

@@ -21,7 +21,10 @@ internal sealed class TrayContext : ApplicationContext
     private readonly ToolStripMenuItem _copyLanItem;
     private readonly ToolStripMenuItem _autoStartItem;
     private readonly ToolStripMenuItem _localFolderItem;
+    private readonly ToolStripMenuItem _desktopLyricsItem;
+    private readonly ToolStripMenuItem _lockLyricsItem;
     private MainForm? _form;
+    private DesktopLyricsForm? _desktopLyrics;
     private string[] _lanUrls = Array.Empty<string>();
     private bool _tooltipQueued;
 
@@ -44,6 +47,8 @@ internal sealed class TrayContext : ApplicationContext
         var menu = new ContextMenuStrip();
         var openItem = new ToolStripMenuItem("開啟 Folia 視窗", null, (_, _) => ShowWindow()) { Font = new Font(menu.Font, FontStyle.Bold) };
         var browserItem = new ToolStripMenuItem("在瀏覽器開啟", null, (_, _) => OpenInBrowser());
+        _desktopLyricsItem = new ToolStripMenuItem("桌面歌詞", null, (_, _) => SetDesktopLyrics(_desktopLyrics == null));
+        _lockLyricsItem = new ToolStripMenuItem("鎖定桌面歌詞（滑鼠可穿過）", null, (_, _) => ToggleLyricsLock());
         _lanItem = new ToolStripMenuItem("允許區網裝置連線（平板、手機）", null, (_, _) => ToggleLan());
         _copyLanItem = new ToolStripMenuItem("複製區網網址", null, (_, _) => CopyLanUrl());
         _autoStartItem = new ToolStripMenuItem("開機時自動啟動", null, (_, _) => ToggleAutoStart());
@@ -52,6 +57,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.AddRange(new ToolStripItem[]
         {
             openItem, browserItem, new ToolStripSeparator(),
+            _desktopLyricsItem, _lockLyricsItem, new ToolStripSeparator(),
             _lanItem, _copyLanItem, new ToolStripSeparator(),
             _localFolderItem, _autoStartItem, new ToolStripSeparator(),
             exitItem,
@@ -74,6 +80,7 @@ internal sealed class TrayContext : ApplicationContext
             (_, _) => RunOnUi(ShowWindow), null, Timeout.Infinite, executeOnlyOnce: false);
 
         _ = StartSourceAsync();
+        if (_settings.DesktopLyrics) SetDesktopLyrics(true);
         if (!startInTray) ShowWindow();
     }
 
@@ -177,13 +184,53 @@ internal sealed class TrayContext : ApplicationContext
         var folder = _settings.LocalLyricsFolder;
         _localFolderItem.Text = string.IsNullOrEmpty(folder) ? "本機歌詞資料夾…（未設定）" : $"本機歌詞資料夾…（{Path.GetFileName(folder.TrimEnd('\\'))}）";
         _localFolderItem.Checked = !string.IsNullOrEmpty(folder);
+        _desktopLyricsItem.Checked = _desktopLyrics != null;
+        _lockLyricsItem.Enabled = _desktopLyrics != null;
+        _lockLyricsItem.Checked = _settings.DesktopLyricsLocked;
+    }
+
+    // ---------- desktop lyrics ----------
+
+    private void SetDesktopLyrics(bool on)
+    {
+        if (on && _desktopLyrics == null)
+        {
+            _desktopLyrics = new DesktopLyricsForm(_hub, _settings);
+            _desktopLyrics.LockedByUser += () => _tray.ShowBalloonTip(6000, "桌面歌詞已鎖定",
+                "滑鼠現在會直接穿過歌詞。要移動或調整，請在系統匣的 Folia 圖示按右鍵，取消「鎖定桌面歌詞」。", ToolTipIcon.Info);
+            _desktopLyrics.ClosedByUser += () => RunOnUi(() => SetDesktopLyrics(false));
+            _desktopLyrics.Show();
+        }
+        else if (!on && _desktopLyrics != null)
+        {
+            var form = _desktopLyrics;
+            _desktopLyrics = null;
+            form.Close();
+            form.Dispose();
+        }
+        if (_settings.DesktopLyrics != on)
+        {
+            _settings.DesktopLyrics = on;
+            _settings.Save();
+        }
+        if (_form != null && !_form.IsDisposed) _form.PostHostState();
+    }
+
+    private void ToggleLyricsLock()
+    {
+        if (_desktopLyrics == null) return;
+        _desktopLyrics.SetLocked(!_settings.DesktopLyricsLocked);
     }
 
     private void ShowWindow()
     {
         if (_form == null || _form.IsDisposed)
         {
-            _form = new MainForm(() => LocalUrl, _settings, _icon, OpenInBrowser, _hub.FocusPlayer);
+            _form = new MainForm(() => LocalUrl, _settings, _icon, OpenInBrowser, _hub.FocusPlayer)
+            {
+                ToggleDesktopLyrics = () => SetDesktopLyrics(_desktopLyrics == null),
+                DesktopLyricsOn = () => _desktopLyrics != null,
+            };
             _form.HiddenToTray += OnWindowHidden;
             _form.Show();
         }
@@ -300,6 +347,9 @@ internal sealed class TrayContext : ApplicationContext
             _form.AllowClose = true;
             _form.Close();
         }
+        _desktopLyrics?.Close();
+        _desktopLyrics?.Dispose();
+        _desktopLyrics = null;
         _tray.Visible = false;
         _tray.Dispose();
         _server.Stop();

@@ -23,6 +23,10 @@ internal sealed class MainForm : Form
     /// <summary>Set when the app quits, so closing really closes instead of hiding.</summary>
     public bool AllowClose { get; set; }
 
+    /// <summary>The desktop-lyrics button on the control card.</summary>
+    public Action? ToggleDesktopLyrics { get; set; }
+    public Func<bool> DesktopLyricsOn { get; set; } = () => false;
+
     public MainForm(Func<string> url, AppSettings settings, Icon? icon, Action openInBrowser, Action focusPlayer)
     {
         _url = url;
@@ -176,6 +180,9 @@ internal sealed class MainForm : Form
                 case "focusPlayer":
                     _focusPlayer();
                     break;
+                case "desktopLyrics":
+                    ToggleDesktopLyrics?.Invoke();
+                    break;
             }
         }
         catch (JsonException)
@@ -196,10 +203,11 @@ internal sealed class MainForm : Form
         PostHostState();
     }
 
-    private void PostHostState()
+    /// <summary>Tells the page about window state (zoom, full screen, desktop lyrics on / off).</summary>
+    public void PostHostState()
     {
         if (!_ready || _web.CoreWebView2 == null) return;
-        var json = JsonSerializer.Serialize(new { type = "host", zoom = _web.ZoomFactor, fullscreen = _fullscreen });
+        var json = JsonSerializer.Serialize(new { type = "host", zoom = _web.ZoomFactor, fullscreen = _fullscreen, desktopLyrics = DesktopLyricsOn() });
         try { _web.CoreWebView2.PostWebMessageAsJson(json); } catch (Exception) { }
     }
 

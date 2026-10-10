@@ -16,6 +16,12 @@ internal sealed class AppSettings
     public bool WindowMaximized { get; set; }
     public bool TrayHintShown { get; set; }
     public string? LocalLyricsFolder { get; set; }
+    public bool DesktopLyrics { get; set; }
+    public bool DesktopLyricsLocked { get; set; }
+    /// <summary>Lyric text size in pixels at 100% display scaling.</summary>
+    public int DesktopLyricsSize { get; set; } = 34;
+    /// <summary>Window position (left, top) in screen pixels; null = bottom centre of the main screen.</summary>
+    public int[]? DesktopLyricsPosition { get; set; }
 
     /// <summary>False for the CI smoke test, which must not touch the real settings file.</summary>
     [JsonIgnore]
@@ -35,6 +41,7 @@ internal sealed class AppSettings
                 {
                     if (loaded.Port is < 1024 or > 65000) loaded.Port = 39863;
                     loaded.OffsetMs = Math.Clamp(loaded.OffsetMs, -5000, 5000);
+                    loaded.DesktopLyricsSize = Math.Clamp(loaded.DesktopLyricsSize, DesktopLyricsRenderer.MinSize, DesktopLyricsRenderer.MaxSize);
                     return loaded;
                 }
             }

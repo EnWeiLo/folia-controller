@@ -14,6 +14,10 @@ internal static class Program
         {
             return SmokeTest.RunFixtures(args[1], args[2]);
         }
+        if (args.Length > 1 && args[0] == "--render-desktop-lyrics")
+        {
+            return SmokeTest.RenderDesktopLyrics(args[1]);
+        }
         if (args.Length > 0 && args[0] == "--smoke-test")
         {
             return SmokeTest.RunAsync(args).GetAwaiter().GetResult();
