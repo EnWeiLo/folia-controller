@@ -59,6 +59,8 @@ internal sealed class MediaHub
     public event Action? TrackChanged;
     /// <summary>Anything the desktop lyrics show changed: song, lyrics, cover, play / pause, a jump in position.</summary>
     public event Action? DisplayChanged;
+    /// <summary>A shared setting changed (e.g. 音樂律動 on / off).</summary>
+    public event Action? SettingsChanged;
 
     public MediaHub(IMediaSource source, AppSettings settings)
     {
@@ -522,6 +524,10 @@ internal sealed class MediaHub
                 offsetChanged = _settings.OffsetMs != offset;
                 _settings.OffsetMs = offset;
             }
+            if (body.TryGetProperty("audioReactive", out var ar) && (ar.ValueKind is JsonValueKind.True or JsonValueKind.False))
+            {
+                _settings.AudioReactive = ar.GetBoolean();
+            }
             if (lyricChanged) outgoing.Add(LyricEvent());
             if (offsetChanged)
             {
@@ -533,6 +539,7 @@ internal sealed class MediaHub
         _settings.Save();
         foreach (var message in outgoing) Broadcast(message);
         DisplayChanged?.Invoke();
+        SettingsChanged?.Invoke();
     }
 
     // ---------- desktop lyrics ----------
@@ -675,6 +682,7 @@ internal sealed class MediaHub
 
                 ["traditional"] = _settings.Traditional,
                 ["offsetMs"] = _settings.OffsetMs,
+                ["audioReactive"] = _settings.AudioReactive,
             },
             ["lan"] = new JsonObject { ["enabled"] = lanEnabled, ["urls"] = urlArray },
         };

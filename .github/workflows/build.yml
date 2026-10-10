@@ -28,6 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - uses: actions/checkout@v4
+        with:
+          path: controller
+
       - name: Fetch Folia source
         env:
           FOLIA_REF: ${{ github.event.inputs.folia_ref }}
@@ -40,6 +44,15 @@ jobs:
           git fetch -q --depth 1 origin "$REF"
           git checkout -q --detach FETCH_HEAD
           git log -1 --format='%H %ci %s'
+
+      # Our small changes to Folia (e.g. letting the now-playing page take audio from the app).
+      - name: Apply Folia patches
+        working-directory: folia-src
+        run: |
+          for p in ../controller/patches/*.patch; do
+            echo "applying $p"
+            git apply --whitespace=nowarn "$p"
+          done
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -229,6 +242,12 @@ jobs:
           Stop-Process -Id $app.Id -Force
           Stop-Transcript | Out-Null
           if ((Test-Path $errors) -and (Select-String -Path $errors -Pattern 'FATAL' -Quiet)) { throw "fatal error logged" }
+
+      - name: Keep the error log
+        if: always()
+        run: |
+          $errors = Join-Path $env:LOCALAPPDATA 'FoliaController\error.log'
+          if (Test-Path $errors) { Copy-Item $errors reports/error.log }
 
       # Test results and screenshots, also on a branch so they can be read without the
       # artifact storage (some networks can't reach it).

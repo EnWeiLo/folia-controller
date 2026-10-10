@@ -514,6 +514,8 @@
       switchRow('fc-daylight', '日間主題') +
       switchRow('fc-fps-toggle', '顯示 FPS', '左上角顯示每秒畫出幾幀') +
       selectRow('fc-subtitle', '副歌詞', SUBTITLES, '歌詞下方那一行：翻譯或羅馬拼音') +
+      '<div class="fc-section">音樂律動（所有裝置共用）</div>' +
+      switchRow('fc-audio', '跟著音樂律動', '擷取這台電腦正在播放的聲音，讓有律動效果的動畫跟著節奏動；不錄音、不上傳') +
       '<div class="fc-section">歌詞（所有裝置共用）</div>' +
       switchRow('fc-traditional', '簡體歌詞轉繁體', '日文歌詞不會轉換') +
       selectRow('fc-offset', '歌詞時間偏移', offsetOptions, '戴藍牙耳機時歌詞偏早，可以調成 +250～+500') +
@@ -544,6 +546,7 @@
     };
     $('fc-subtitle').onchange = function () { store.set('subtitle', this.value); reloadWithSettings(); };
     $('fc-traditional').onclick = function () { post('/api/settings', { traditional: !state.settings.traditional }); };
+    $('fc-audio').onclick = function () { post('/api/settings', { audioReactive: !state.settings.audioReactive }); };
     $('fc-offset').onchange = function () { post('/api/settings', { offsetMs: Number(this.value) }); };
   }
 
@@ -561,6 +564,7 @@
     setSwitch('fc-fps-toggle', store.get('fps', false));
     $('fc-subtitle').value = store.get('subtitle', 'translation');
     setSwitch('fc-traditional', state.settings.traditional);
+    setSwitch('fc-audio', state.settings.audioReactive !== false);
     $('fc-offset').value = String(state.settings.offsetMs || 0);
     var lan = $('fc-lan');
     if (state.lan.enabled && state.lan.urls.length) {

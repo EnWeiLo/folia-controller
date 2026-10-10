@@ -17,6 +17,8 @@ internal sealed class AppSettings
     public bool TrayHintShown { get; set; }
     public string? LocalLyricsFolder { get; set; }
     public bool DesktopLyrics { get; set; }
+    /// <summary>音樂律動: feed what the PC plays into Folia's audio-reactive visuals.</summary>
+    public bool AudioReactive { get; set; } = true;
     public bool DesktopLyricsLocked { get; set; }
     /// <summary>Lyric text size in pixels at 100% display scaling.</summary>
     public int DesktopLyricsSize { get; set; } = 34;

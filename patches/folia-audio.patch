@@ -1,0 +1,35 @@
+diff --git a/src/components/obs/ObsWebSourceApp.tsx b/src/components/obs/ObsWebSourceApp.tsx
+index 5ed564a..5c21a51 100644
+--- a/src/components/obs/ObsWebSourceApp.tsx
++++ b/src/components/obs/ObsWebSourceApp.tsx
+@@ -61,6 +61,30 @@ const ObsWebSourceApp: React.FC<ObsWebSourceAppProps> = ({ source, appearance, o
+     const spectrum = useMotionValue(EMPTY_SPECTRUM);
+     const audioBands = useMemo(() => ({ bass, lowMid, mid, vocal, treble, spectrum }), [bass, lowMid, mid, spectrum, treble, vocal]);
+ 
++    // Folia 控制器 patch (patches/folia-audio.patch): the wrapper app captures the music playing on
++    // the device and feeds it here, so audio-reactive visuals work on this page too.
++    useEffect(() => {
++        type AudioFrame = {
++            audioPower: number;
++            bands: { bass: number; lowMid: number; mid: number; vocal: number; treble: number };
++            spectrum: Uint8Array;
++        };
++        const host = window as unknown as { __foliaAudio?: (frame: AudioFrame) => void };
++        host.__foliaAudio = (frame) => {
++            audioPower.set(frame.audioPower);
++            bass.set(frame.bands.bass);
++            lowMid.set(frame.bands.lowMid);
++            mid.set(frame.bands.mid);
++            vocal.set(frame.bands.vocal);
++            treble.set(frame.bands.treble);
++            spectrum.set(frame.spectrum);
++        };
++        window.dispatchEvent(new Event('folia-audio-ready'));
++        return () => {
++            delete host.__foliaAudio;
++        };
++    }, [audioPower, bass, lowMid, mid, vocal, treble, spectrum]);
++
+     // Dynamic AI overlay: a per-song regenerated DualTheme (null unless/until generated; overrides cfg/cover below).
+     const aiDualTheme = useObsAiTheme({ enabled: !!obsAiConfig, aiConfig: obsAiConfig ?? null, state });
+ 

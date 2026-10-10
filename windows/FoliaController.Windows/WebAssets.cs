@@ -69,6 +69,7 @@ internal sealed class WebAssets
         // fc-tuning.js must run before Folia reads its address (it merges the panel's options into cfg).
         const string injection = "<link rel=\"stylesheet\" href=\"/__fc/overlay.css\"><link rel=\"stylesheet\" href=\"/__fc/fc-tuning.css\">" +
             "<script src=\"/__fc/fc-tuning-schema.js\"></script><script src=\"/__fc/fc-tuning.js\"></script>" +
+            "<script src=\"/__fc/fc-audio.js\"></script>" +
             "<script src=\"/__fc/overlay.js\"></script>";
         return head.Success ? html.Insert(head.Index + head.Length, injection) : injection + html;
     }

@@ -119,6 +119,13 @@ check(settingsState?.settings?.offsetMs === 500, 'settings broadcast', JSON.stri
 const offsetProgress = lastOf('PlayerProgress');
 check(offsetProgress && Math.abs(offsetProgress.progress - 119500) < 2000, 'offset applied to Folia clock', JSON.stringify(offsetProgress));
 
+// 音樂律動 stream (no capture in the smoke test, but the channel must accept pages).
+const audioWs = new WebSocket(`ws://127.0.0.1:${port}/api/ws/audio`);
+const audioOpen = await new Promise((resolve) => { audioWs.onopen = () => resolve(true); audioWs.onerror = () => resolve(false); setTimeout(() => resolve(false), 3000); });
+check(audioOpen, 'audio WebSocket opens');
+audioWs.close();
+check(settingsState?.settings?.audioReactive === true, 'audioReactive setting reported (on by default)', JSON.stringify(settingsState?.settings));
+
 // Resync request (page woke up) re-sends the snapshot.
 const beforeResync = events.length;
 ws.send('{"type":"resync"}');

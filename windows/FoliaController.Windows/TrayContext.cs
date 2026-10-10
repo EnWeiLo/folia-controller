@@ -25,6 +25,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly ToolStripMenuItem _lockLyricsItem;
     private MainForm? _form;
     private DesktopLyricsForm? _desktopLyrics;
+    private readonly AudioCapture _audio;
+    private int _audioListeners;
     private string[] _lanUrls = Array.Empty<string>();
     private bool _tooltipQueued;
 
@@ -41,6 +43,13 @@ internal sealed class TrayContext : ApplicationContext
         _hub.LanInfo = () => (_server.Lan, _lanUrls);
         _hub.TrackChanged += QueueTooltip;
         LocalLyrics.Folder = () => _settings.LocalLyricsFolder;
+        _audio = new AudioCapture(() => _hub.Current?.Playing ?? false) { Send = _server.BroadcastAudio };
+        _server.AudioListenersChanged += count =>
+        {
+            _audioListeners = count;
+            UpdateAudio();
+        };
+        _hub.SettingsChanged += UpdateAudio;
 
         StartServer(_settings.AllowLan);
 
@@ -187,6 +196,22 @@ internal sealed class TrayContext : ApplicationContext
         _desktopLyricsItem.Checked = _desktopLyrics != null;
         _lockLyricsItem.Enabled = _desktopLyrics != null;
         _lockLyricsItem.Checked = _settings.DesktopLyricsLocked;
+    }
+
+    // ---------- 音樂律動 ----------
+
+    /// <summary>Capture only while a page listens and the setting is on.</summary>
+    private void UpdateAudio()
+    {
+        try
+        {
+            if (_settings.AudioReactive && _audioListeners > 0) _audio.Start();
+            else _audio.Stop();
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write(ex, fatal: false);
+        }
     }
 
     // ---------- desktop lyrics ----------
@@ -352,6 +377,7 @@ internal sealed class TrayContext : ApplicationContext
         _desktopLyrics = null;
         _tray.Visible = false;
         _tray.Dispose();
+        _audio.Dispose();
         _server.Stop();
         _source.Dispose();
         ExitThread();

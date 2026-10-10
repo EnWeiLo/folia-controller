@@ -22,12 +22,16 @@ internal sealed class WebServer : IDisposable
     private readonly MediaHub _hub;
     private readonly object _clientsGate = new();
     private readonly List<WsClient> _clients = new();
+    private readonly List<WsClient> _audioClients = new();
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
 
     public int Port { get; private set; }
     public bool Lan { get; private set; }
     public bool Running => _listener != null;
+
+    /// <summary>How many pages listen to the audio stream (capture runs only while someone does).</summary>
+    public event Action<int>? AudioListenersChanged;
 
     public WebServer(WebAssets assets, MediaHub hub)
     {
@@ -72,9 +76,11 @@ internal sealed class WebServer : IDisposable
         List<WsClient> clients;
         lock (_clientsGate)
         {
-            clients = _clients.ToList();
+            clients = _clients.Concat(_audioClients).ToList();
             _clients.Clear();
+            _audioClients.Clear();
         }
+        AudioListenersChanged?.Invoke(0);
         foreach (var client in clients) client.Abort();
     }
 
@@ -85,6 +91,15 @@ internal sealed class WebServer : IDisposable
         lock (_clientsGate)
         {
             foreach (var client in _clients) client.Enqueue(message);
+        }
+    }
+
+    /// <summary>One audio frame to every page that listens (the newest wins if a page falls behind).</summary>
+    public void BroadcastAudio(string message)
+    {
+        lock (_clientsGate)
+        {
+            foreach (var client in _audioClients) client.Enqueue(message);
         }
     }
 
@@ -366,7 +381,8 @@ internal sealed class WebServer : IDisposable
             var sameOrigin = !request.Headers.TryGetValue("Origin", out var origin) ||
                              (Uri.TryCreate(origin, UriKind.Absolute, out var originUri) &&
                               originUri.Authority.Equals(host, StringComparison.OrdinalIgnoreCase));
-            if (request.Path != "/api/ws/lyric" || !sameOrigin ||
+            var isAudio = request.Path == "/api/ws/audio";
+            if ((request.Path != "/api/ws/lyric" && !isAudio) || !sameOrigin ||
                 !request.Headers.TryGetValue("Sec-WebSocket-Key", out var key) || key.Length == 0)
             {
                 await WriteResponseAsync(stream, request, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Forbidden"), false, ct);
@@ -384,9 +400,16 @@ internal sealed class WebServer : IDisposable
                 IsServer = true,
                 KeepAliveInterval = TimeSpan.FromSeconds(25),
             });
-            var client = new WsClient(socket);
-            foreach (var message in _hub.SnapshotMessages()) client.Enqueue(message);
-            lock (_clientsGate) _clients.Add(client);
+            var client = new WsClient(socket, isAudio ? 4 : 1024);
+            var list = isAudio ? _audioClients : _clients;
+            if (!isAudio) foreach (var message in _hub.SnapshotMessages()) client.Enqueue(message);
+            int audioCount;
+            lock (_clientsGate)
+            {
+                list.Add(client);
+                audioCount = _audioClients.Count;
+            }
+            if (isAudio) AudioListenersChanged?.Invoke(audioCount);
             try
             {
                 var sending = client.SendLoopAsync(ct);
@@ -396,7 +419,12 @@ internal sealed class WebServer : IDisposable
             }
             finally
             {
-                lock (_clientsGate) _clients.Remove(client);
+                lock (_clientsGate)
+                {
+                    list.Remove(client);
+                    audioCount = _audioClients.Count;
+                }
+                if (isAudio) AudioListenersChanged?.Invoke(audioCount);
             }
         }
         catch (Exception)
@@ -450,15 +478,19 @@ internal sealed class WebServer : IDisposable
     private sealed class WsClient
     {
         // A frozen page (window hidden to the tray) stops reading; keep the newest messages only.
-        private readonly Channel<string> _queue = Channel.CreateBounded<string>(new BoundedChannelOptions(1024)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = true,
-        });
+        private readonly Channel<string> _queue;
 
         public WebSocket Socket { get; }
 
-        public WsClient(WebSocket socket) => Socket = socket;
+        public WsClient(WebSocket socket, int capacity)
+        {
+            Socket = socket;
+            _queue = Channel.CreateBounded<string>(new BoundedChannelOptions(capacity)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+            });
+        }
 
         public void Enqueue(string message) => _queue.Writer.TryWrite(message);
 

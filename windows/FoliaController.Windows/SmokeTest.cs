@@ -123,6 +123,15 @@ internal static class SmokeTest
             if (!ok) failures++;
             lines.Add($"{(ok ? "PASS" : "FAIL")}  krc vector" + (ok ? "" : "  got: " + got[..Math.Min(80, got.Length)]));
         }
+        // 音樂律動: a 1 kHz tone at 48 kHz must peak in Folia's bin for 1 kHz (≈46 at 21.5 Hz per bin).
+        foreach (var rate in new[] { 44100, 48000 })
+        {
+            var bins = AudioCapture.AnalyseTone(1000, rate);
+            var peak = Array.IndexOf(bins, bins.Max());
+            var ok = Math.Abs(peak - 46) <= 1 && bins[peak] > 170 && bins[200] < 60;
+            if (!ok) failures++;
+            lines.Add($"{(ok ? "PASS" : "FAIL")}  audio tone 1 kHz @ {rate}: peak bin {peak} = {bins[peak]}, bin 200 = {bins[200]}");
+        }
         lines.Add(failures == 0 ? "all fixtures match" : $"{failures} fixture(s) differ");
         File.WriteAllLines(outPath, lines);
         return failures == 0 ? 0 : 1;
@@ -233,14 +242,36 @@ internal static class SmokeTest
     /// </summary>
     public static int DesktopLyricsCheck(string pngPath, string logPath)
     {
+        var log = new System.Text.StringBuilder();
+        try
+        {
+            return DesktopLyricsCheckCore(pngPath, logPath, log);
+        }
+        catch (Exception ex)
+        {
+            log.AppendLine("FAILED " + ex);
+            File.WriteAllText(logPath, log.ToString());
+            return 2;
+        }
+    }
+
+    private static int DesktopLyricsCheckCore(string pngPath, string logPath, System.Text.StringBuilder log)
+    {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) =>
+        {
+            log.AppendLine("UI ERROR " + e.Exception);
+            File.WriteAllText(logPath, log.ToString());
+        };
         ApplicationConfiguration.Initialize();
+        log.AppendLine("starting");
         var settings = new AppSettings { Persist = false };
         LyricChoices.Persist = false;
         var source = new FakeSource();
         var hub = new MediaHub(source, settings);
-        var log = new System.Text.StringBuilder();
         var exit = 1;
         using var form = new DesktopLyricsForm(hub, settings);
+        log.AppendLine("window created");
         var timer = new System.Windows.Forms.Timer { Interval = 20000 };
         timer.Tick += (_, _) =>
         {
@@ -269,6 +300,8 @@ internal static class SmokeTest
         };
         _ = source.StartAsync();
         form.Show();
+        log.AppendLine($"shown: bounds={form.Bounds} frames={form.PresentCount} error={form.LastError ?? "none"}");
+        File.WriteAllText(logPath, log.ToString());
         timer.Start();
         Application.Run();
         return exit;
