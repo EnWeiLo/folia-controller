@@ -285,7 +285,12 @@ internal static class SmokeTest
                 using var shot = new Bitmap(area.Width, area.Height);
                 using (var g = Graphics.FromImage(shot))
                 {
-                    g.CopyFromScreen(area.Location, Point.Empty, area.Size, CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
+                    // CAPTUREBLT includes layered windows (CopyFromScreen won't take that flag combination).
+                    var dest = g.GetHdc();
+                    var screen = GetDC(IntPtr.Zero);
+                    BitBlt(dest, 0, 0, area.Width, area.Height, screen, area.X, area.Y, 0x00CC0020 | 0x40000000);
+                    ReleaseDC(IntPtr.Zero, screen);
+                    g.ReleaseHdc(dest);
                 }
                 shot.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png);
                 exit = form.LastError == null && form.PresentCount > 0 && form.CurrentText != null ? 0 : 1;
@@ -306,6 +311,11 @@ internal static class SmokeTest
         Application.Run();
         return exit;
     }
+
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+    private static extern bool BitBlt(IntPtr hdc, int x, int y, int cx, int cy, IntPtr hdcSrc, int x1, int y1, int rop);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
 
     public static async Task<int> RunAsync(string[] args)
     {

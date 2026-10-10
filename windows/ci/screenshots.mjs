@@ -57,6 +57,17 @@ await shoot('tablet', {
       inset: getComputedStyle(document.documentElement).getPropertyValue('--fc-inset') };
   });
   console.log('tablet subtitle vs card: ' + JSON.stringify(info));
+  // 音樂律動: the patched Folia page takes audio, and a frame goes through without errors.
+  const audio = await page.evaluate(() => {
+    const ready = typeof window.__foliaAudio === 'function';
+    const bytes = new Uint8Array(1024).map((_, i) => (i < 60 ? 220 : 40));
+    let s = ''; bytes.forEach((b) => { s += String.fromCharCode(b); });
+    window.__fcAudioFrame(btoa(s), 1);
+    return { ready, feeder: typeof window.__fcAudioFrame };
+  });
+  await page.waitForTimeout(500);
+  console.log('audio feed: ' + JSON.stringify(audio));
+  if (!audio.ready) errors.push('tablet: Folia does not take audio (patch missing?)');
 });
 
 // 商籟 with its outer frame text switched off and the next-line preview hidden (options from the
