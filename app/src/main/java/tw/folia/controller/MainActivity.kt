@@ -159,7 +159,7 @@ class MainActivity : Activity() {
         if (intent.getBooleanExtra("demo", false)) {
             MediaHub.startDemo(demoCover())
             // CI screenshots of the 動畫與外觀 panel.
-            if (intent.getBooleanExtra("tuning", false)) handler.postDelayed({ openTuning() }, 12000)
+            if (intent.getBooleanExtra("tuning", false)) handler.postDelayed({ openTuning() }, 18000)
         }
         loadFolia()
         refreshUi()
@@ -621,8 +621,14 @@ class MainActivity : Activity() {
         card.visibility = View.GONE
         val u = String.format(Locale.US, "%.3f", resources.displayMetrics.density * currentQuality().renderScale)
         webView.evaluateJavascript(
-            "window.FcTuning&&FcTuning.open({u:$u,onClose:function(){FoliaNative.tuningClosed()}})", null,
-        )
+            "window.FcTuning?(FcTuning.open({u:$u,onClose:function(){FoliaNative.tuningClosed()}}),true):false",
+        ) { result ->
+            // The page is still loading (or failed): give the screen back and say so.
+            if (result != "true") {
+                tuningClosed()
+                android.widget.Toast.makeText(this, "畫面還在載入，請稍後再開一次", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun tuningClosed() {

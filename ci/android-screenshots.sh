@@ -54,7 +54,7 @@ sleep 1.5
 shot phone-card-hidden
 
 launch --ez demo true --ez tuning true
-sleep 20
+sleep 26
 shot phone-tuning
 
 # Tablet (landscape)
@@ -67,7 +67,7 @@ launch --ez demo true --ez tutorial true
 sleep 15
 shot tablet-tutorial
 launch --ez demo true --ez tuning true
-sleep 20
+sleep 26
 shot tablet-tuning
 adb shell wm size reset
 adb shell wm density reset
