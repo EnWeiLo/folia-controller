@@ -113,6 +113,9 @@
     html.classList.toggle('fc-hide-upcoming', !!x.hideUpcoming);
   }
   try { applyExtras(load().x); } catch (e) { /* ignore */ }
+  window.addEventListener('load', function () {
+    console.info('[fc-tuning] page ' + window.innerWidth + 'x' + window.innerHeight + ' dpr=' + window.devicePixelRatio);
+  });
 
   // ---------- the panel ----------
   var TABS = [
@@ -400,9 +403,13 @@
   }
 
   var api = {
-    /** opts.u: CSS px per "real" px (screen density × quality); opts.onClose: called after closing. */
+    /**
+     * opts.u: CSS px per "real" px; or opts.dpWidth: the screen's width in real px, from which u is
+     * measured (safer when the page's scale isn't what was asked for). opts.onClose: after closing.
+     */
     open: function (opts) {
       state.opts = opts || {};
+      if (state.opts.dpWidth > 0) state.opts.u = window.innerWidth / state.opts.dpWidth;
       state.o = load();
       state.mode = currentMode();
       state.tab = 'mode';

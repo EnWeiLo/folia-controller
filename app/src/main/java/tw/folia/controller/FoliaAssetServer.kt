@@ -87,7 +87,10 @@ class FoliaAssetServer(
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
         val renderScale = settings.renderScale.coerceIn(0.4f, 1f)
         val scale = String.format(Locale.US, "%.4f", 1f / (density * renderScale))
-        val viewport = "<meta name=\"viewport\" content=\"initial-scale=$scale, minimum-scale=$scale, " +
+        // width=device-width matters: without it Android's WebView lays the page out 980 px wide whatever
+        // the scale, and the quality setting does nothing. With it, initial-scale < 1 widens the layout to
+        // device width ÷ scale = physical pixels × renderScale.
+        val viewport = "<meta name=\"viewport\" content=\"width=device-width, initial-scale=$scale, minimum-scale=$scale, " +
             "maximum-scale=$scale, user-scalable=no, viewport-fit=cover\" />"
 
         var out = Regex("""<meta\s+name=["']viewport["'][^>]*>""", RegexOption.IGNORE_CASE).replace(html, "")

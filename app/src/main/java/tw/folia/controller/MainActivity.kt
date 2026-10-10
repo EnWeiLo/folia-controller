@@ -619,9 +619,10 @@ class MainActivity : Activity() {
         tuningOpen = true
         gestureLayer.visibility = View.GONE
         card.visibility = View.GONE
-        val u = String.format(Locale.US, "%.3f", resources.displayMetrics.density * currentQuality().renderScale)
+        val dpWidth = webView.width / resources.displayMetrics.density
         webView.evaluateJavascript(
-            "window.FcTuning?(FcTuning.open({u:$u,onClose:function(){FoliaNative.tuningClosed()}}),true):false",
+            "window.FcTuning?(FcTuning.open({dpWidth:${String.format(Locale.US, "%.1f", dpWidth)}," +
+                "onClose:function(){FoliaNative.tuningClosed()}}),true):false",
         ) { result ->
             android.util.Log.i("FoliaController", "tuning panel open: $result")
             // The page is still loading (or failed): give the screen back and say so.
