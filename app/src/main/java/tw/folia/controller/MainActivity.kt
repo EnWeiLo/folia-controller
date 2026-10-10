@@ -623,6 +623,7 @@ class MainActivity : Activity() {
         webView.evaluateJavascript(
             "window.FcTuning?(FcTuning.open({u:$u,onClose:function(){FoliaNative.tuningClosed()}}),true):false",
         ) { result ->
+            android.util.Log.i("FoliaController", "tuning panel open: $result")
             // The page is still loading (or failed): give the screen back and say so.
             if (result != "true") {
                 tuningClosed()

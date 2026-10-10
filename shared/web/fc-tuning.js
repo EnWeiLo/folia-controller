@@ -424,6 +424,9 @@
       root.classList.toggle('fct-narrow', window.innerWidth / (state.opts.u || 1) < 560);
       root.classList.add('fct-open');
       render();
+      var sheet = root.querySelector('.fct-sheet').getBoundingClientRect();
+      console.info('[fc-tuning] open ' + window.innerWidth + 'x' + window.innerHeight + ' u=' + (state.opts.u || 1) +
+        ' sheet=' + Math.round(sheet.left) + ',' + Math.round(sheet.top) + ' ' + Math.round(sheet.width) + 'x' + Math.round(sheet.height));
     },
     close: function () {
       if (!root || !root.classList.contains('fct-open')) return;

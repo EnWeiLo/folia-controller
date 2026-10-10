@@ -69,10 +69,13 @@ shot tablet-tutorial
 launch --ez demo true --ez tuning true
 sleep 26
 shot tablet-tuning
+sleep 10
+shot tablet-tuning-later
 adb shell wm size reset
 adb shell wm density reset
 
 adb logcat -d -b crash > "$OUT/crash.txt" 2>&1 || true
+adb logcat -d | grep -E "FoliaController|fc-tuning|CONSOLE" > "$OUT/app-log.txt" 2>&1 || true
 adb logcat -d -s ActivityTaskManager:* ActivityManager:* AndroidRuntime:* WindowManager:W > "$OUT/activity.txt" 2>&1 || true
 adb logcat -d -s AndroidRuntime:E chromium:E > "$OUT/errors.txt" 2>&1 || true
 echo "crash log lines: $(wc -l < "$OUT/crash.txt")"
