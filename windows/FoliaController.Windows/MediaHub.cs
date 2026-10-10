@@ -34,6 +34,9 @@ internal sealed class MediaHub
     private byte[]? _cover;
     private string _coverMime = "image/jpeg";
     private int _coverId;
+    // The cover's address: a fingerprint of the image, so a cached copy can never be another song's
+    // (a counter restarts at 1 every launch, while the window's browser cache survives).
+    private string _coverKey = "";
     private int _coverVersionLoaded = -1;
     private int _coverLoading;
     private int _coverRequests;
@@ -446,6 +449,7 @@ internal sealed class MediaHub
                                 _cover = cover.Value.Data;
                                 _coverMime = cover.Value.Mime;
                                 _coverId++;
+                                _coverKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(_cover))[..20].ToLowerInvariant();
                                 _palette = CoverPalette.FromImage(_cover);
                                 trackEvent = TrackEvent();
                                 stateEvent = ControllerStateEvent();
@@ -481,11 +485,11 @@ internal sealed class MediaHub
         if (again) LoadCover();
     }
 
-    public (byte[] Data, string Mime)? GetCover(int id)
+    public (byte[] Data, string Mime)? GetCover(string key)
     {
         lock (_gate)
         {
-            return _cover != null && id == _coverId ? (_cover, _coverMime) : null;
+            return _cover != null && key == _coverKey ? (_cover, _coverMime) : null;
         }
     }
 
@@ -598,7 +602,7 @@ internal sealed class MediaHub
             data["author"] = snap.Artist;
             data["album"] = snap.Album;
             if (snap.DurationMs > 0) data["duration"] = snap.DurationMs;
-            if (_cover != null) data["cover"] = $"/api/cover/{_coverId}";
+            if (_cover != null) data["cover"] = $"/api/cover/{_coverKey}";
         }
         return Envelope("Track", data);
     }
@@ -660,7 +664,7 @@ internal sealed class MediaHub
             ["title"] = snap?.Title ?? "",
             ["artist"] = snap?.Artist ?? "",
             ["album"] = snap?.Album ?? "",
-            ["cover"] = _cover != null ? $"/api/cover/{_coverId}" : null,
+            ["cover"] = _cover != null ? $"/api/cover/{_coverKey}" : null,
             ["playing"] = snap?.Playing ?? false,
             ["positionMs"] = snap?.LivePositionMs() ?? 0,
             ["durationMs"] = snap?.DurationMs ?? 0,

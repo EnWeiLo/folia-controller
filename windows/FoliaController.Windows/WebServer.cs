@@ -300,9 +300,10 @@ internal sealed class WebServer : IDisposable
             }
         }
         if (path.StartsWith("/api/cover/", StringComparison.Ordinal) &&
-            int.TryParse(path["/api/cover/".Length..], out var coverId) && _hub.GetCover(coverId) is { } cover)
+            _hub.GetCover(path["/api/cover/".Length..]) is { } cover)
         {
-            return (200, cover.Mime, cover.Data, "private, max-age=86400");
+            // The address is the image's fingerprint, so it never points at a different picture.
+            return (200, cover.Mime, cover.Data, "private, max-age=86400, immutable");
         }
         if (path.StartsWith("/__fc/", StringComparison.Ordinal))
         {
