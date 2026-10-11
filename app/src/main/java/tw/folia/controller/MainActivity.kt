@@ -1027,10 +1027,16 @@ class MainActivity : Activity() {
             dialog.window?.let { window ->
                 var blur = false
                 if (Build.VERSION.SDK_INT >= 31 && windowManager.isCrossWindowBlurEnabled) {
-                    blur = true
-                    window.setBackgroundBlurRadius(dp(40))
-                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    window.attributes = window.attributes.apply { blurBehindRadius = dp(12) }
+                    try {
+                        // The blur goes on the window's decor view, which doesn't exist until asked for.
+                        window.decorView
+                        window.setBackgroundBlurRadius(dp(40))
+                        window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                        window.attributes = window.attributes.apply { blurBehindRadius = dp(12) }
+                        blur = true
+                    } catch (e: Exception) {
+                        android.util.Log.w("Flowrics", "no dialog blur", e)
+                    }
                 }
                 window.setBackgroundDrawable(
                     android.graphics.drawable.InsetDrawable(
