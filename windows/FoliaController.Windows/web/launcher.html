@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Folia 控制器</title>
+<title>流詞 Flowrics</title>
 <style>
   html, body { margin: 0; height: 100%; background: #09090b; color: #a1a1aa;
     font: 15px/1.5 "Segoe UI", "Microsoft JhengHei UI", "PingFang TC", "Noto Sans TC", system-ui, sans-serif; }
@@ -31,7 +31,7 @@
     'danmaku', 'led', 'boom', 'meteor', 'glitch', 'vortex', 'fireworks', 'jelly', 'warp', 'shatter'];
   var SUBTITLES = ['translation', 'romanization', 'both', 'none'];
   var subtitle = get('subtitle', 'translation');
-  var mode = get('mode', 'fx:dive');
+  var mode = get('mode', 'classic');
   if (typeof mode === 'string' && mode.indexOf('fx:') === 0) {
     var fx = mode.slice(3);
     if (FX.indexOf(fx) < 0) fx = 'dive';

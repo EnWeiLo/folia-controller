@@ -141,7 +141,7 @@ jobs:
       - name: Name the APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk "out/FoliaController-${{ github.run_number }}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "out/Flowrics-${{ github.run_number }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -180,14 +180,14 @@ jobs:
       - name: Lyric format fixtures (must match the Android output)
         run: |
           New-Item -ItemType Directory -Force reports | Out-Null
-          $p = Start-Process -FilePath out/win/FoliaController.exe -ArgumentList '--fixture-test', (Resolve-Path tests/lyrics).Path, (Join-Path $PWD 'reports/fixtures.txt') -Wait -PassThru
+          $p = Start-Process -FilePath out/win/Flowrics.exe -ArgumentList '--fixture-test', (Resolve-Path tests/lyrics).Path, (Join-Path $PWD 'reports/fixtures.txt') -Wait -PassThru
           Get-Content reports/fixtures.txt
           if ($p.ExitCode -ne 0) { throw "lyric fixtures differ from the Android output" }
 
       - name: Desktop lyrics sample picture
         run: |
           $out = Join-Path $PWD 'reports/desktop-lyrics.png'
-          $p = Start-Process -FilePath out/win/FoliaController.exe -ArgumentList '--render-desktop-lyrics', $out -Wait -PassThru
+          $p = Start-Process -FilePath out/win/Flowrics.exe -ArgumentList '--render-desktop-lyrics', $out -Wait -PassThru
           if ($p.ExitCode -ne 0 -or -not (Test-Path $out)) { throw "desktop lyrics drawing failed (code $($p.ExitCode))" }
           $errors = Join-Path $env:LOCALAPPDATA 'FoliaController\error.log'
           if (Test-Path $errors) { Get-Content $errors }
@@ -196,7 +196,7 @@ jobs:
         run: |
           $png = Join-Path $PWD 'reports/desktop-lyrics-window.png'
           $log = Join-Path $PWD 'reports/desktop-lyrics-window.txt'
-          $p = Start-Process -FilePath out/win/FoliaController.exe -ArgumentList '--desktop-lyrics-test', $png, $log -Wait -PassThru
+          $p = Start-Process -FilePath out/win/Flowrics.exe -ArgumentList '--desktop-lyrics-test', $png, $log -Wait -PassThru
           Get-Content $log
           $errors = Join-Path $env:LOCALAPPDATA 'FoliaController\error.log'
           if (Test-Path $errors) { Write-Host "---- error.log ----"; Get-Content $errors }
@@ -207,7 +207,7 @@ jobs:
           npm install --prefix windows/ci --no-audit --no-fund --silent playwright-core@1.48.2
           New-Item -ItemType Directory -Force reports | Out-Null
           $log = Join-Path $PWD 'reports/smoke.log'
-          $server = Start-Process -FilePath out/win/FoliaController.exe -ArgumentList '--smoke-test', '39999', $log -PassThru
+          $server = Start-Process -FilePath out/win/Flowrics.exe -ArgumentList '--smoke-test', '39999', $log -PassThru
           # Screenshots first (state is untouched), then the protocol checks.
           node windows/ci/screenshots.mjs 39999 reports 2>&1 | Tee-Object -FilePath reports/screenshots.txt
           node windows/ci/smoke.mjs 39999 2>&1 | Tee-Object -FilePath reports/smoke-results.txt
@@ -221,7 +221,7 @@ jobs:
       - name: Start the real app (tray, then a second launch opens the window)
         run: |
           Start-Transcript -Path reports/app-check.txt | Out-Null
-          $exe = (Resolve-Path out/win/FoliaController.exe).Path
+          $exe = (Resolve-Path out/win/Flowrics.exe).Path
           $app = Start-Process -FilePath $exe -ArgumentList '--tray' -PassThru
           Start-Sleep -Seconds 8
           if ($app.HasExited) { throw "app exited right after start (code $($app.ExitCode))" }
@@ -261,7 +261,7 @@ jobs:
       - name: Name the exe
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item out/win/FoliaController.exe "dist/FoliaController-${{ github.run_number }}.exe"
+          Copy-Item out/win/Flowrics.exe "dist/Flowrics-${{ github.run_number }}.exe"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -360,10 +360,10 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Folia 控制器 build ${{ github.run_number }}
+          name: 流詞 Flowrics build ${{ github.run_number }}
           body: |
             自動建置。
             - **Android**：手機打開此頁，下載 `.apk` 安裝（會覆蓋舊版）。
-            - **Windows**：下載 `.exe` 直接執行，不用安裝。第一次執行若出現 SmartScreen，按「其他資訊 → 仍要執行」。
+            - **Windows**：下載 `.exe` 直接執行，不用安裝。第一次執行若出現 SmartScreen，按「其他資訊 → 仍要執行」。新版開啟時會自動關掉正在執行的舊版（包含改名前的 FoliaController.exe），設定會沿用，舊的 exe 可以刪掉。
           files: out/*
           make_latest: true

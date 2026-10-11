@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1024" height="1024">
+  <!-- 流詞 Flowrics: a line of sound flowing into a text cursor. White on black. -->
+  <rect width="108" height="108" fill="#000"/>
+  <path d="M29,55 C33,42 41,42 45,55 S57,68 61,55 C62.5,50.5 64,48 66,47" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="72" y="38" width="6.5" height="34" rx="3.25" fill="#fff"/>
+</svg>

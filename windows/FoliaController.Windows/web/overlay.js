@@ -1,4 +1,4 @@
-// overlay.js — Folia 控制器's control bar and settings, drawn over Folia's Now Playing page.
+// overlay.js — 流詞 Flowrics' control bar and settings, drawn over Folia's Now Playing page.
 // Loaded as a classic script at the top of <head>, so the first part runs before Folia
 // (whose bundle is a deferred module) and can still see the real devicePixelRatio and set
 // the viewport. The UI is built once the DOM is ready.
@@ -27,8 +27,12 @@
     { id: 'balanced', label: '均衡', detail: '約 75% 解析度', scale: 0.75 },
     { id: 'smooth', label: '流暢', detail: '約 60%，關閉幾何背景', scale: 0.6 },
   ];
-  // Flowrics' own effects (fx.html) first, then Folia's animations. ['', label] starts a group.
+  // Folia's animations first (the default), then Flowrics' own effects (fx.html). ['', label] starts a group.
   var MODES = [
+    ['', 'Folia 動畫'],
+    ['classic', '流光'], ['cadenza', '心象'], ['partita', '雲階'], ['fume', '浮名'], ['monet', '莫奈'],
+    ['cappella', '群唱'], ['tilt', '傾訴'], ['claddagh', '回環'], ['diorama', '鏡台'], ['pendolo', '時計'],
+    ['sonnet', '商籟'], ['tempera', '凝彩'], ['lumiere', '繪光'], ['still', '靜止'],
     ['', '流詞特效'],
     ['fx:dive', '潛入'], ['fx:minimal', '極簡'], ['fx:karaoke', '卡拉OK'], ['fx:cinema', '電影字幕'], ['fx:ink', '墨染'],
     ['fx:ripple', '液面'], ['fx:stardust', '星塵'], ['fx:neon', '霓虹'], ['fx:vinyl', '黑膠'], ['fx:comic', '漫畫對白'],
@@ -36,12 +40,8 @@
     ['', '誇張特效'],
     ['fx:boom', '爆破'], ['fx:meteor', '隕石'], ['fx:glitch', '故障'], ['fx:vortex', '漩渦'], ['fx:fireworks', '煙火'],
     ['fx:jelly', '果凍'], ['fx:warp', '曲速'], ['fx:shatter', '碎玻璃'],
-    ['', '更多動畫（Folia）'],
-    ['classic', '流光'], ['cadenza', '心象'], ['partita', '雲階'], ['fume', '浮名'], ['monet', '莫奈'],
-    ['cappella', '群唱'], ['tilt', '傾訴'], ['claddagh', '回環'], ['diorama', '鏡台'], ['pendolo', '時計'],
-    ['sonnet', '商籟'], ['tempera', '凝彩'], ['lumiere', '繪光'], ['still', '靜止'],
   ];
-  var DEFAULT_MODE = 'fx:dive';
+  var DEFAULT_MODE = 'classic';
   // On Flowrics' own effect page there is no Folia to tune.
   var isFx = location.pathname === '/fx.html';
   var OFFSETS = [-1000, -500, -250, 0, 250, 500, 750, 1000, 1500];
@@ -112,6 +112,11 @@
     desktop: 'M5 3h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6v2h3v2H8v-2h3v-2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v10h14V5H5zm2 3h10v2H7V8zm2 3h6v2H9v-2z',
     note: 'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z',
   };
+  // 流詞's logo: a line of sound flowing into a text cursor (branding/flowrics-logo.svg).
+  var LOGO_SVG = '<svg viewBox="20 20 68 68"><rect x="20" y="20" width="68" height="68" rx="15" fill="#000"/>' +
+    '<path d="M29,55 C33,42 41,42 45,55 S57,68 61,55 C62.5,50.5 64,48 66,47" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<rect x="72" y="38" width="7" height="34" rx="3.5" fill="#fff"/></svg>';
+
   function icon(name) {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="' + ICONS[name] + '"/></svg>';
   }
@@ -466,7 +471,7 @@
     if (!root) return;
     var notice = $('fc-notice');
     if (!state.connected) {
-      notice.textContent = '連不到這台電腦上的 Folia 控制器小程式，重新連線中…';
+      notice.textContent = '連不到這台電腦上的流詞，重新連線中…';
       notice.classList.add('fc-on');
     } else {
       notice.classList.remove('fc-on');
@@ -544,7 +549,12 @@
       '<div class="fc-section">其他裝置</div>' +
       '<div class="fc-note" id="fc-lan"></div>' +
       '<div class="fc-section">快捷鍵</div>' +
-      '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · L 換歌詞' + (webview ? ' · D 桌面歌詞' : '') + ' · F 或雙擊 全螢幕 · 點一下歌詞 收起／打開資訊卡 · Esc 離開</div>';
+      '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · L 換歌詞' + (webview ? ' · D 桌面歌詞' : '') + ' · F 或雙擊 全螢幕 · 點一下歌詞 收起／打開資訊卡 · Esc 離開</div>' +
+      '<div class="fc-section">關於</div>' +
+      '<div class="fc-about"><div class="fc-logo" aria-hidden="true">' + LOGO_SVG + '</div><div><b>流詞 Flowrics</b>' +
+        '<small id="fc-version"></small><small>在任何播放器播歌時，顯示會動的歌詞。</small></div></div>' +
+      '<div class="fc-keys">「Folia 動畫」來自 Folia（github.com/chthollyphile/folia-major），以 AGPL-3.0 授權。' +
+        '流詞含有 Folia，同樣依 AGPL-3.0 提供原始碼：github.com/EnWeiLo/folia-controller。歌詞與音樂的版權屬於各權利人。</div>';
 
     $('fc-close').onclick = function () { openPanel(false); };
     if (!isFx) $('fc-tuning-open').onclick = openTuning;
@@ -589,13 +599,14 @@
     setSwitch('fc-audio', state.settings.audioReactive !== false);
     $('fc-offset').value = String(state.settings.offsetMs || 0);
     var lan = $('fc-lan');
+    if ($('fc-version')) $('fc-version').textContent = state.version ? '版本 ' + state.version : '';
     if (state.lan.enabled && state.lan.urls.length) {
       lan.innerHTML = '同一個 Wi‑Fi 下的平板或手機，用瀏覽器打開：<br>' +
         state.lan.urls.map(function (u) { return '<code>' + u + '</code>'; }).join('<br>');
     } else if (state.lan.enabled) {
       lan.textContent = '已允許區網連線，但找不到這台電腦的區網位址。';
     } else {
-      lan.textContent = '想讓平板也顯示歌詞：在系統匣的 Folia 圖示按右鍵，勾選「允許區網裝置連線」。';
+      lan.textContent = '想讓平板也顯示歌詞：在系統匣的流詞圖示按右鍵，勾選「允許區網裝置連線」。';
     }
   }
 

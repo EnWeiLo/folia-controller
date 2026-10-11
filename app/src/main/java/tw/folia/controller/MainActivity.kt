@@ -82,7 +82,7 @@ class MainActivity : Activity() {
             Mode("fx:vortex", "漩渦"), Mode("fx:fireworks", "煙火"), Mode("fx:jelly", "果凍"),
             Mode("fx:warp", "曲速"), Mode("fx:shatter", "碎玻璃"),
         )
-        private const val DEFAULT_MODE = "fx:dive"
+        private const val DEFAULT_MODE = "classic"
         private fun modeLabel(id: String?): String =
             (FX_MODES + WILD_MODES + MODES).firstOrNull { it.id == id }?.label ?: (id ?: "")
         private val QUALITIES = listOf(
@@ -301,8 +301,8 @@ class MainActivity : Activity() {
         card = buildCard()
         root.addView(card)
         arrangeCard()
-        card.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
-            if (bottom - top != oldBottom - oldTop) updateFoliaInset()
+        card.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) updateFoliaInset()
         }
 
         permissionPanel = buildPermissionPanel().apply { elevation = dpf(24f) }
@@ -502,11 +502,7 @@ class MainActivity : Activity() {
         val palette = MediaHub.palette
         if (palette != appliedPalette) {
             appliedPalette = palette
-            card.background = GradientDrawable().apply {
-                cornerRadius = dpf(22f)
-                setColor((palette.card and 0xFFFFFF) or (0xE6 shl 24))
-                setStroke(dp(1), 0x1FFFFFFF)
-            }
+            card.background = glassBackground(dpf(26f), palette.card, if (glassBlurOn()) 0x70 else 0xC8)
             playButton.setColorFilter(palette.card)
             val radius = dpf(2f)
             val track = LayerDrawable(arrayOf(
@@ -656,7 +652,7 @@ class MainActivity : Activity() {
             startAudioIfWanted()
             return
         }
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        glassDialog()
             .setTitle("跟著音樂律動")
             .setMessage("讓有律動效果的歌詞動畫跟著節奏動。\n\nAndroid 把「讀取正在播放的聲音頻譜」歸在「錄音」權限底下，所以需要你允許。App 只讀取頻譜的強弱，不會錄音、存檔或上傳。")
             .setPositiveButton("繼續") { _, _ -> requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO) }
@@ -831,7 +827,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         })
         addView(TextView(context).apply {
-            text = "Folia 控制器要讀取 Spotify、YouTube Music 等 App 正在播放的歌曲和進度，" +
+            text = "流詞要讀取 Spotify、YouTube Music 等 App 正在播放的歌曲和進度，" +
                 "才能同步顯示歌詞並控制播放。它不會讀取或保存你的通知內容。"
             setTextColor(0xCCFFFFFF.toInt())
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -860,6 +856,9 @@ class MainActivity : Activity() {
     // ---------- behaviour ----------
 
     private fun loadFolia() {
+        // The card's see-through level follows the quality (no blur behind it in 流暢).
+        appliedPalette = null
+        if (::card.isInitialized) applyCardLook()
         // CI screenshots pick an effect for one run without touching the saved setting.
         val demoMode = if (MediaHub.demo) intent.getStringExtra("mode") else null
         val mode = demoMode ?: prefs.getString("mode", DEFAULT_MODE) ?: DEFAULT_MODE
@@ -966,6 +965,104 @@ class MainActivity : Activity() {
         webView.evaluateJavascript(
             "window.__fcSetBottomInset&&window.__fcSetBottomInset(${String.format(Locale.US, "%.1f", cssPx)})", null,
         )
+        updateGlass()
+    }
+
+    // ---------- liquid glass ----------
+
+    /**
+     * The page blurs what's behind the info card (CSS backdrop-filter on an element at the card's
+     * place, folia-bridge.js), so the native card on top can be see-through like glass. Off for the
+     * 流暢 quality, where every bit of GPU goes to the animation.
+     */
+    private fun glassBlurOn() = currentQuality().id != "smooth"
+
+    private fun updateGlass() {
+        val scale = currentQuality().renderScale
+        val on = glassBlurOn() && controlsVisible && card.width > 0
+        val js = if (on) {
+            String.format(
+                Locale.US, "{on:true,x:%.1f,y:%.1f,w:%.1f,h:%.1f,r:%.1f,blur:%.1f}",
+                card.left * scale, card.top * scale, card.width * scale, card.height * scale,
+                dpf(26f) * scale, dpf(26f) * scale,
+            )
+        } else "{on:false}"
+        webView.evaluateJavascript("window.__fcSetGlass&&window.__fcSetGlass($js)", null)
+    }
+
+    /** A glass pane: a tint, a sheen across the top and a bright rim. */
+    private fun glassBackground(radius: Float, tint: Int, alpha: Int): android.graphics.drawable.Drawable {
+        val base = tint and 0xFFFFFF
+        val body = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(base or ((alpha * 0.8).toInt() shl 24), base or (alpha.coerceAtMost(255) shl 24)),
+        ).apply { cornerRadius = radius }
+        val sheen = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(0x2EFFFFFF, 0x08FFFFFF, 0x00FFFFFF, 0x0AFFFFFF),
+        ).apply { cornerRadius = radius }
+        val rim = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(Color.TRANSPARENT)
+            setStroke(dp(1), 0x4DFFFFFF)
+        }
+        val innerRim = GradientDrawable().apply {
+            cornerRadius = radius - dpf(1f)
+            setColor(Color.TRANSPARENT)
+            setStroke(dp(1), 0x14FFFFFF)
+        }
+        return LayerDrawable(arrayOf(body, sheen, rim, innerRim)).apply {
+            val i = dp(1)
+            setLayerInset(3, i, i, i, i)
+        }
+    }
+
+    /** Dialogs as frosted glass: blurs what's behind them on Android 12+. */
+    private fun glassDialog() = object : AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert) {
+        override fun create(): AlertDialog {
+            val dialog = super.create()
+            dialog.window?.let { window ->
+                var blur = false
+                if (Build.VERSION.SDK_INT >= 31 && windowManager.isCrossWindowBlurEnabled) {
+                    blur = true
+                    window.setBackgroundBlurRadius(dp(40))
+                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    window.attributes = window.attributes.apply { blurBehindRadius = dp(12) }
+                }
+                window.setBackgroundDrawable(
+                    android.graphics.drawable.InsetDrawable(
+                        glassBackground(dpf(28f), 0x1C1C22, if (blur) 0x99 else 0xF0), dp(16), dp(24), dp(16), dp(24),
+                    ),
+                )
+                window.setDimAmount(0.3f)
+            }
+            return dialog
+        }
+    }
+
+    private fun showAbout() {
+        val version = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+        glassDialog()
+            .setTitle("流詞 Flowrics")
+            .setMessage(
+                "版本 $version\n在任何播放器播歌時，顯示會動的歌詞。\n\n" +
+                    "「Folia 動畫」來自 Folia（github.com/chthollyphile/folia-major），以 AGPL-3.0 授權。" +
+                    "流詞含有 Folia，同樣依 AGPL-3.0 提供原始碼：github.com/EnWeiLo/folia-controller。\n\n" +
+                    "歌詞與音樂的版權屬於各權利人。",
+            )
+            .setPositiveButton("原始碼") { _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/EnWeiLo/folia-controller")))
+                } catch (e: ActivityNotFoundException) {
+                }
+            }
+            .setNegativeButton("關閉", null)
+            .setOnDismissListener { enterImmersive() }
+            .show()
     }
 
     private fun setControlsVisible(visible: Boolean) {
@@ -1001,7 +1098,7 @@ class MainActivity : Activity() {
     // ---------- local lyrics folder ----------
 
     private fun pickLyricsFolder() {
-        val builder = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        val builder = glassDialog()
             .setTitle("本機歌詞資料夾")
             .setMessage(
                 "選一個放 .lrc 歌詞檔的資料夾（子資料夾也會找）。檔名用「歌名」、「歌手 - 歌名」或「歌名 - 歌手」，" +
@@ -1045,7 +1142,7 @@ class MainActivity : Activity() {
             android.widget.Toast.makeText(this, "現在沒有正在播放的歌曲", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        val waiting = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        val waiting = glassDialog()
             .setTitle("換歌詞")
             .setMessage("正在搜尋各個歌詞來源…")
             .setNegativeButton("取消", null)
@@ -1075,7 +1172,7 @@ class MainActivity : Activity() {
             }
             "【${LyricRepository.sourceName(c.source)}】${c.title}\n${c.artist}  ${formatTime(c.durationMs)}$diffText$mark"
         }.toTypedArray()
-        val builder = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        val builder = glassDialog()
             .setTitle("換歌詞：${track.title}")
             .setNegativeButton("這首不顯示歌詞") { _, _ -> MediaHub.chooseNone() }
             .setOnDismissListener { enterImmersive() }
@@ -1160,7 +1257,7 @@ class MainActivity : Activity() {
 
     private fun pickQuality() {
         val current = QUALITIES.indexOf(currentQuality()).coerceAtLeast(0)
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        glassDialog()
             .setTitle("畫質")
             .setSingleChoiceItems(QUALITIES.map { "${it.label}：${it.detail}" }.toTypedArray(), current) { dialog, which ->
                 prefs.edit().putString("quality", QUALITIES[which].id).apply()
@@ -1176,7 +1273,7 @@ class MainActivity : Activity() {
         val values = listOf("auto") + rates.map { it.toString() }
         val labels = listOf("自動（螢幕最高 ${rates.maxOrNull() ?: 60} Hz）") + rates.map { "$it Hz" }
         val current = values.indexOf(refreshPref()).coerceAtLeast(0)
-        val builder = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        val builder = glassDialog()
             .setTitle("刷新率")
             .setSingleChoiceItems(labels.toTypedArray(), current) { dialog, which ->
                 prefs.edit().putString("refresh", values[which]).apply()
@@ -1214,8 +1311,9 @@ class MainActivity : Activity() {
             "跟著音樂律動：${onOff("audio_reactive", false)}",
             "手勢說明",
             "重新載入畫面",
+            "關於流詞",
         )
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        glassDialog()
             .setTitle("設定")
             .setItems(items) { _, which ->
                 when (which) {
@@ -1236,6 +1334,7 @@ class MainActivity : Activity() {
                     11 -> toggleAudio()
                     12 -> showGestureTutorial()
                     13 -> loadFolia()
+                    14 -> showAbout()
                 }
             }
             .setOnDismissListener { enterImmersive() }
@@ -1249,15 +1348,15 @@ class MainActivity : Activity() {
     private fun pickMode() {
         val current = prefs.getString("mode", DEFAULT_MODE)
         val groups = listOf(
-            Triple("流詞特效", "流詞自己的動態歌詞", FX_MODES),
+            Triple("Folia 動畫", "Folia 內建的 14 種歌詞動畫", MODES),
+            Triple("流詞特效", "流詞自己做的動態歌詞", FX_MODES),
             Triple("誇張特效", "爆炸、隕石、故障…好玩為主", WILD_MODES),
-            Triple("更多動畫（Folia）", "Folia 原本內建的動畫", MODES),
         )
         val labels = groups.map { (name, desc, list) ->
             val mark = if (list.any { it.id == current }) "　● ${modeLabel(current)}" else ""
             "$name$mark\n$desc"
         }
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        glassDialog()
             .setTitle("歌詞動畫")
             .setItems(labels.toTypedArray()) { _, which -> pickModeIn(groups[which].first, groups[which].third) }
             .setOnDismissListener { enterImmersive() }
@@ -1266,7 +1365,7 @@ class MainActivity : Activity() {
 
     private fun pickModeIn(title: String, list: List<Mode>) {
         val current = list.indexOfFirst { it.id == prefs.getString("mode", DEFAULT_MODE) }
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        glassDialog()
             .setTitle(title)
             .setSingleChoiceItems(list.map { it.label }.toTypedArray(), current) { dialog, which ->
                 prefs.edit().putString("mode", list[which].id).apply()
@@ -1287,7 +1386,7 @@ class MainActivity : Activity() {
 
     private fun pickSubtitle() {
         val current = SUBTITLES.indexOfFirst { it.first == subtitleMode() }.coerceAtLeast(0)
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        glassDialog()
             .setTitle("副歌詞（歌詞下方那一行）")
             .setSingleChoiceItems(SUBTITLES.map { it.second }.toTypedArray(), current) { dialog, which ->
                 prefs.edit().putString("subtitle", SUBTITLES[which].first).apply()
@@ -1307,7 +1406,7 @@ class MainActivity : Activity() {
                 else -> "$it ms（歌詞早一點）"
             }
         }.toTypedArray()
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        glassDialog()
             .setTitle("歌詞時間偏移")
             .setSingleChoiceItems(labels, current) { dialog, which ->
                 prefs.edit().putLong("offset", OFFSETS[which]).apply()

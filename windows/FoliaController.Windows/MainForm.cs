@@ -34,7 +34,7 @@ internal sealed class MainForm : Form
         _openInBrowser = openInBrowser;
         _focusPlayer = focusPlayer;
 
-        Text = "Folia 控制器";
+        Text = "流詞 Flowrics";
         BackColor = Color.Black;
         if (icon != null) Icon = icon;
         StartPosition = FormStartPosition.Manual;
@@ -91,9 +91,9 @@ internal sealed class MainForm : Form
         catch (WebView2RuntimeNotFoundException)
         {
             var answer = MessageBox.Show(this,
-                "這台電腦缺少 Microsoft Edge WebView2 Runtime，無法開啟 Folia 視窗。\n\n" +
+                "這台電腦缺少 Microsoft Edge WebView2 Runtime，無法開啟流詞視窗。\n\n" +
                 "要改用瀏覽器開啟嗎？（也可以到微軟網站下載安裝 WebView2 Runtime 後再試）",
-                "Folia 控制器", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                "流詞", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (answer == DialogResult.Yes) _openInBrowser();
             HideToTray();
             return;
@@ -101,8 +101,8 @@ internal sealed class MainForm : Form
         catch (Exception ex)
         {
             CrashLog.Write(ex, fatal: false);
-            MessageBox.Show(this, "Folia 視窗無法啟動：" + ex.Message + "\n\n可以從系統匣選單改用瀏覽器開啟。",
-                "Folia 控制器", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, "流詞視窗無法啟動：" + ex.Message + "\n\n可以從系統匣選單改用瀏覽器開啟。",
+                "流詞", MessageBoxButtons.OK, MessageBoxIcon.Error);
             HideToTray();
             return;
         }

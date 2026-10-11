@@ -174,7 +174,7 @@ internal static class SmokeTest
         cover.Save(coverStream, System.Drawing.Imaging.ImageFormat.Png);
         var palette = CoverPalette.FromImage(coverStream.ToArray());
 
-        var state = new DisplayState(true, "示範歌曲", "Folia 控制器", true, doc, palette, 1);
+        var state = new DisplayState(true, "示範歌曲", "流詞", true, doc, palette, 1);
         var noLyrics = state with { Doc = null };
         var line0 = DesktopLyricsModel.FrameAt(state, 1500);
         var line1 = DesktopLyricsModel.FrameAt(state, 4000 + 2100);

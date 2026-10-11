@@ -1,20 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A leaf (Folia) with three lyric lines across it. Safe zone is the central 66dp. -->
+<!-- 流詞 Flowrics: a line of sound flowing into a text cursor (branding/flowrics-logo.svg).
+     Safe zone is the central 66dp. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#E8E4D8"
-        android:pathData="M54,26 C70,34 78,48 74,62 C70,76 58,82 54,82 C50,82 38,76 34,62 C30,48 38,34 54,26 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M29,55 C33,42 41,42 45,55 S57,68 61,55 C62.5,50.5 64,48 66,47" />
     <path
-        android:fillColor="#09090B"
-        android:pathData="M42,50 L66,50 L66,53 L42,53 Z" />
-    <path
-        android:fillColor="#09090B"
-        android:pathData="M40,58 L68,58 L68,61 L40,61 Z" />
-    <path
-        android:fillColor="#09090B"
-        android:pathData="M44,66 L64,66 L64,69 L44,69 Z" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M75.25,38 A3.25,3.25 0 0,1 78.5,41.25 L78.5,68.75 A3.25,3.25 0 0,1 72,68.75 L72,41.25 A3.25,3.25 0 0,1 75.25,38 Z" />
 </vector>

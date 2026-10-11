@@ -90,6 +90,22 @@ internal static class AutoStart
                value.Contains(ExePath, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The app used to be FoliaController.exe. If "start with Windows" still points at an older exe
+    /// of this app (by that name or this one) that isn't this one, point it here instead.
+    /// </summary>
+    public static void FollowRename()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
+        if (key?.GetValue(ValueName) is not string value) return;
+        if (value.Contains(ExePath, StringComparison.OrdinalIgnoreCase)) return;
+        if (value.Contains("FoliaController.exe", StringComparison.OrdinalIgnoreCase) ||
+            value.Contains("Flowrics", StringComparison.OrdinalIgnoreCase))
+        {
+            key.SetValue(ValueName, $"\"{ExePath}\" --tray");
+        }
+    }
+
     public static void Set(bool enabled)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKey);

@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "FoliaController"
+rootProject.name = "Flowrics"
 include(":app")

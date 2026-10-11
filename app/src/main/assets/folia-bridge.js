@@ -105,5 +105,34 @@
     }
   };
 
+  // Liquid glass: the app's info card is drawn natively over this page and is see-through, so
+  // the page blurs what's under it. {on, x, y, w, h, r, blur} in CSS px.
+  window.__fcSetGlass = function (g) {
+    var el = document.getElementById('fc-glass');
+    if (!el) {
+      if (!g || !g.on) return;
+      el = document.createElement('div');
+      el.id = 'fc-glass';
+      el.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483000;opacity:0;' +
+        'transition:opacity .22s ease;background:rgba(255,255,255,0.02)';
+      (document.body || document.documentElement).appendChild(el);
+    }
+    if (g && g.on) {
+      var f = 'blur(' + Math.round(g.blur) + 'px) saturate(180%)';
+      el.style.left = g.x + 'px'; el.style.top = g.y + 'px';
+      el.style.width = g.w + 'px'; el.style.height = g.h + 'px';
+      el.style.borderRadius = g.r + 'px';
+      el.style.webkitBackdropFilter = f; el.style.backdropFilter = f;
+      el.style.opacity = '1';
+    } else {
+      el.style.opacity = '0';
+      // no blur work while hidden
+      clearTimeout(el._off);
+      el._off = setTimeout(function () {
+        if (el.style.opacity === '0') { el.style.backdropFilter = 'none'; el.style.webkitBackdropFilter = 'none'; }
+      }, 260);
+    }
+  };
+
   window.__FOLIA_ANDROID_CONTROLLER__ = true;
 })();

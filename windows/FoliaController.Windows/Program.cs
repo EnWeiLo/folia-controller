@@ -27,8 +27,15 @@ internal static class Program
             return SmokeTest.RunAsync(args).GetAwaiter().GetResult();
         }
 
-        // One copy at a time: a second launch just brings the first one's window up.
+        // One copy at a time: a second launch just brings the first one's window up — unless the
+        // running copy is a different exe (an older build, or FoliaController.exe from before the
+        // rename), which is closed so this one takes over.
         using var mutex = new Mutex(true, MutexName, out var isFirst);
+        if (!isFirst && CloseOtherBuilds())
+        {
+            try { isFirst = mutex.WaitOne(TimeSpan.FromSeconds(8)); }
+            catch (AbandonedMutexException) { isFirst = true; }
+        }
         if (!isFirst)
         {
             try
@@ -57,6 +64,37 @@ internal static class Program
         var startInTray = args.Contains("--tray", StringComparer.OrdinalIgnoreCase);
         Application.Run(new TrayContext(showEvent, startInTray));
         return 0;
+    }
+
+    /// <summary>Ends running copies of this app that come from another exe file. True if any was found.</summary>
+    private static bool CloseOtherBuilds()
+    {
+        var self = Environment.ProcessPath ?? "";
+        var myId = Environment.ProcessId;
+        var found = false;
+        foreach (var name in new[] { "Flowrics", "FoliaController" })
+        {
+            foreach (var process in Process.GetProcessesByName(name))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (process.Id == myId) continue;
+                        var path = process.MainModule?.FileName ?? "";
+                        if (string.Equals(path, self, StringComparison.OrdinalIgnoreCase)) continue;
+                        process.Kill();
+                        process.WaitForExit(5000);
+                        found = true;
+                    }
+                    catch (Exception)
+                    {
+                        // Not ours to close, or already gone.
+                    }
+                }
+            }
+        }
+        return found;
     }
 }
 

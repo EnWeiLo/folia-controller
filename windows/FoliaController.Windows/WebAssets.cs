@@ -69,7 +69,7 @@ internal sealed class WebAssets
     {
         html = Regex.Replace(html, @"<meta\s+name=[""']viewport[""'][^>]*>", "", RegexOptions.IgnoreCase);
         html = Regex.Replace(html, @"<script[^>]*registerSW[^>]*>\s*</script>", "", RegexOptions.IgnoreCase);
-        html = Regex.Replace(html, @"<title>[^<]*</title>", "<title>Folia 控制器</title>", RegexOptions.IgnoreCase);
+        html = Regex.Replace(html, @"<title>[^<]*</title>", "<title>流詞 Flowrics</title>", RegexOptions.IgnoreCase);
         var head = Regex.Match(html, @"<head[^>]*>", RegexOptions.IgnoreCase);
         // fc-tuning.js must run before Folia reads its address (it merges the panel's options into cfg).
         const string injection = "<link rel=\"stylesheet\" href=\"/__fc/overlay.css\"><link rel=\"stylesheet\" href=\"/__fc/fc-tuning.css\">" +

@@ -1,4 +1,4 @@
-// fc-tuning.js — Folia 控制器's "動畫與外觀" panel: every option Folia's own settings offer for the
+// fc-tuning.js — 流詞's "動畫與外觀" panel: every option Folia's own settings offer for the
 // lyric animations, text, subtitle area and background, shared by the Android app and the Windows app.
 //
 // Folia's "Now Playing" page takes its look from the `cfg` URL parameter and has no settings UI of

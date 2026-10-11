@@ -12,6 +12,10 @@ namespace FoliaController;
 /// </summary>
 internal sealed class MediaHub
 {
+    /// <summary>The build's version (1.0.&lt;CI run&gt;), shown in 關於.</summary>
+    public static readonly string AppVersion =
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "";
+
     // An explicit resolver: without one, writing JSON arrays (the LAN address list) threw
     // "JsonSerializerOptions instance must specify a TypeInfoResolver" in the published exe.
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -691,6 +695,7 @@ internal sealed class MediaHub
                 ["audioReactive"] = _settings.AudioReactive,
             },
             ["lan"] = new JsonObject { ["enabled"] = lanEnabled, ["urls"] = urlArray },
+            ["version"] = AppVersion,
         };
         return Envelope("ControllerState", data);
     }

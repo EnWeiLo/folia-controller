@@ -9,12 +9,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>FoliaController</RootNamespace>
-    <AssemblyName>FoliaController</AssemblyName>
+    <AssemblyName>Flowrics</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
-    <Product>Folia 控制器</Product>
-    <AssemblyTitle>Folia 控制器</AssemblyTitle>
+    <Product>流詞 Flowrics</Product>
+    <AssemblyTitle>流詞 Flowrics</AssemblyTitle>
     <Version>1.0.0</Version>
 
     <!-- One self-contained exe: no .NET install needed on the target PC. -->

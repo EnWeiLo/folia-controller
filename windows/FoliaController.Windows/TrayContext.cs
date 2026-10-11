@@ -35,6 +35,8 @@ internal sealed class TrayContext : ApplicationContext
         _ui.CreateControl(); // a handle to marshal background events onto the UI thread
 
         _settings = AppSettings.Load();
+        // Renamed from FoliaController.exe: keep "start with Windows" pointing at this exe.
+        try { AutoStart.FollowRename(); } catch (Exception ex) { CrashLog.Write(ex, fatal: false); }
         _assets = WebAssets.Load();
         _icon = LoadIcon(_assets.AppIcon);
         _hub = new MediaHub(_source, _settings);
@@ -54,7 +56,7 @@ internal sealed class TrayContext : ApplicationContext
         StartServer(_settings.AllowLan);
 
         var menu = new ContextMenuStrip();
-        var openItem = new ToolStripMenuItem("開啟 Folia 視窗", null, (_, _) => ShowWindow()) { Font = new Font(menu.Font, FontStyle.Bold) };
+        var openItem = new ToolStripMenuItem("開啟流詞", null, (_, _) => ShowWindow()) { Font = new Font(menu.Font, FontStyle.Bold) };
         var browserItem = new ToolStripMenuItem("在瀏覽器開啟", null, (_, _) => OpenInBrowser());
         _desktopLyricsItem = new ToolStripMenuItem("桌面歌詞", null, (_, _) => SetDesktopLyrics(_desktopLyrics == null));
         _lockLyricsItem = new ToolStripMenuItem("鎖定桌面歌詞（滑鼠可穿過）", null, (_, _) => ToggleLyricsLock());
@@ -76,7 +78,7 @@ internal sealed class TrayContext : ApplicationContext
         _tray = new NotifyIcon
         {
             Icon = _icon ?? SystemIcons.Application,
-            Text = "Folia 控制器",
+            Text = "流詞 Flowrics",
             ContextMenuStrip = menu,
             Visible = true,
         };
@@ -128,7 +130,7 @@ internal sealed class TrayContext : ApplicationContext
         catch (Exception ex)
         {
             CrashLog.Write(ex, fatal: false);
-            RunOnUi(() => _tray.ShowBalloonTip(8000, "Folia 控制器",
+            RunOnUi(() => _tray.ShowBalloonTip(8000, "流詞",
                 "無法讀取 Windows 的媒體播放資訊（需要 Windows 10 1809 以上）。", ToolTipIcon.Warning));
         }
     }
@@ -222,7 +224,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             _desktopLyrics = new DesktopLyricsForm(_hub, _settings);
             _desktopLyrics.LockedByUser += () => _tray.ShowBalloonTip(6000, "桌面歌詞已鎖定",
-                "滑鼠現在會直接穿過歌詞。要移動或調整，請在系統匣的 Folia 圖示按右鍵，取消「鎖定桌面歌詞」。", ToolTipIcon.Info);
+                "滑鼠現在會直接穿過歌詞。要移動或調整，請在系統匣的流詞圖示按右鍵，取消「鎖定桌面歌詞」。", ToolTipIcon.Info);
             _desktopLyrics.ClosedByUser += () => RunOnUi(() => SetDesktopLyrics(false));
             _desktopLyrics.Show();
         }
@@ -267,8 +269,8 @@ internal sealed class TrayContext : ApplicationContext
         if (_settings.TrayHintShown) return;
         _settings.TrayHintShown = true;
         _settings.Save();
-        _tray.ShowBalloonTip(6000, "Folia 控制器仍在背景執行",
-            "點系統匣的 Folia 圖示就能再打開；要完全關閉請按右鍵 →「結束」。", ToolTipIcon.Info);
+        _tray.ShowBalloonTip(6000, "流詞仍在背景執行",
+            "點系統匣的流詞圖示就能再打開；要完全關閉請按右鍵 →「結束」。", ToolTipIcon.Info);
     }
 
     private void OpenInBrowser()
@@ -355,7 +357,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             _tooltipQueued = false;
             var snap = _hub.Current;
-            var text = "Folia 控制器";
+            var text = "流詞";
             if (snap != null && snap.Title.Length > 0)
             {
                 text += (snap.Playing ? "\n▶ " : "\n❚❚ ") + snap.Title + (snap.Artist.Length > 0 ? " — " + snap.Artist : "");

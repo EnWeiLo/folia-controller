@@ -532,11 +532,11 @@ object MediaHub {
         demoBaseMs = DemoSong.START_MS
         demoSince = SystemClock.elapsedRealtime()
         lyricRequestId++
-        track = TrackInfo("demo", null, "示範歌曲", "Folia 控制器", "介面預覽", DemoSong.DURATION_MS, "demo")
+        track = TrackInfo("demo", null, "示範歌曲", "流詞", "介面預覽", DemoSong.DURATION_MS, "demo")
         coverSource = cover
         encodeCover(cover, "demo")
         noLyricsChosen = false
-        setLyrics(LyricResult(DemoSong.doc(), LyricCandidate("local", "demo", "示範歌曲", "Folia 控制器", "", DemoSong.DURATION_MS)))
+        setLyrics(LyricResult(DemoSong.doc(), LyricCandidate("local", "demo", "示範歌曲", "流詞", "", DemoSong.DURATION_MS)))
         pushSnapshot()
     }
 
