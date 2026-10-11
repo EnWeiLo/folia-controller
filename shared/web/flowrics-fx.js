@@ -460,6 +460,16 @@
       seal: 'rgba(196,58,36,0.88)', sealText: '#e6efe9',
     },
     // 靛夜: deep indigo night, moonlight, silver lettering
+    // OLED 純黑: pure black (pixels off on OLED screens) and pure white; for old phones used as a display
+    oled: {
+      paint: function (g, S) {
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, S.w, S.h);
+      },
+      ink: function () { return '#fff'; },
+      blot: '255,255,255', blotAlpha: 0.07, sub: 'rgba(255,255,255,0.72)',
+      seal: null, sealOutline: '#ffffff', sealText: '#ffffff', drift: true,
+    },
     indigo: {
       paint: function (g, S, U) {
         inkPaperBase(g, S, U, '#121c38', '#060a17', 0.08, 'blur(' + Math.round(S.w / 24) + 'px) grayscale(1)');
@@ -639,6 +649,11 @@
     var themeId = INK_THEMES[opts.theme] ? opts.theme : 'paper';
     var inkFont = inkFontFor(S, U, extraText);
     var kit = { theme: theme, font: inkFont, ja: inkFont.ja };
+    /** OLED: move everything by a few pixels over the minutes so nothing stays lit in one place. */
+    kit.drift = function () {
+      if (!theme.drift) return;
+      ctx.translate(Math.sin(S.now / 97000) * 8 * S.scale, Math.cos(S.now / 131000) * 8 * S.scale);
+    };
     kit.paper = function () {
       var paper = U.offscreen('paper', S.w, S.h);
       var pk = themeId + '|' + S.w + 'x' + S.h + '|' + (S.cover ? S._coverUrl : '') + '|' + Math.round(pal.hue);
@@ -870,6 +885,7 @@
       ['cover', '封面（專輯封面模糊當背景）'],
       ['celadon', '青瓷（淡青釉色、藍灰墨）'],
       ['indigo', '靛夜（深藍夜色、銀白字）'],
+      ['oled', 'OLED 純黑（全黑背景、純白字，適合舊手機當顯示器）'],
     ] },
     { id: 'zhFont', label: '中文字體', def: 'wenkai', choices: [
       ['wenkai', '楷書（霞鶩文楷）'],
@@ -897,6 +913,7 @@
       var inkFont = kit.font, theme = kit.theme;
       var a = U.area(), st = S.store, t = S.t;
       kit.paper();
+      kit.drift();
       inkSplashes(ctx, S, U, theme, a);
       var ink = kit.ink;
 
@@ -1086,6 +1103,7 @@
       var kit = inkKit(ctx, S, U, '零一二三四五六七八九十時分整月日星期流');
       var a = U.area(), st = S.store, now = S.now;
       kit.paper();
+      kit.drift();
       var theme = kit.theme;
       // each text keeps the moment it started being written, so a new minute is written afresh
       st.parts = st.parts || {};

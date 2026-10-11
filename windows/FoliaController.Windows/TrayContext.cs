@@ -19,6 +19,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly RegisteredWaitHandle _showWait;
     private readonly ToolStripMenuItem _lanItem;
     private readonly ToolStripMenuItem _copyLanItem;
+    private readonly ToolStripMenuItem _firewallItem;
     private readonly ToolStripMenuItem _autoStartItem;
     private readonly ToolStripMenuItem _localFolderItem;
     private readonly ToolStripMenuItem _desktopLyricsItem;
@@ -54,6 +55,7 @@ internal sealed class TrayContext : ApplicationContext
         _hub.SettingsChanged += UpdateAudio;
 
         StartServer(_settings.AllowLan);
+        if (_settings.AllowLan) CheckFirewallAsync(ask: false);
 
         var menu = new ContextMenuStrip();
         var openItem = new ToolStripMenuItem("開啟流詞", null, (_, _) => ShowWindow()) { Font = new Font(menu.Font, FontStyle.Bold) };
@@ -62,6 +64,7 @@ internal sealed class TrayContext : ApplicationContext
         _lockLyricsItem = new ToolStripMenuItem("鎖定桌面歌詞（滑鼠可穿過）", null, (_, _) => ToggleLyricsLock());
         _lanItem = new ToolStripMenuItem("允許區網裝置連線（平板、手機）", null, (_, _) => ToggleLan());
         _copyLanItem = new ToolStripMenuItem("複製區網網址", null, (_, _) => CopyLanUrl());
+        _firewallItem = new ToolStripMenuItem("修復區網連線（Windows 防火牆）…", null, (_, _) => FixFirewall(ask: false));
         _autoStartItem = new ToolStripMenuItem("開機時自動啟動", null, (_, _) => ToggleAutoStart());
         _localFolderItem = new ToolStripMenuItem("本機歌詞資料夾…", null, (_, _) => ChooseLocalFolder());
         var exitItem = new ToolStripMenuItem("結束", null, (_, _) => Quit());
@@ -69,7 +72,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             openItem, browserItem, new ToolStripSeparator(),
             _desktopLyricsItem, _lockLyricsItem, new ToolStripSeparator(),
-            _lanItem, _copyLanItem, new ToolStripSeparator(),
+            _lanItem, _copyLanItem, _firewallItem, new ToolStripSeparator(),
             _localFolderItem, _autoStartItem, new ToolStripSeparator(),
             exitItem,
         });
@@ -190,6 +193,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         _lanItem.Checked = _server.Lan;
         _copyLanItem.Enabled = _server.Lan && _lanUrls.Length > 0;
+        _firewallItem.Enabled = _server.Lan;
         _copyLanItem.Text = _copyLanItem.Enabled ? $"複製區網網址（{_lanUrls[0]}）" : "複製區網網址";
         try { _autoStartItem.Checked = AutoStart.IsEnabled(); } catch (Exception) { _autoStartItem.Checked = false; }
         var folder = _settings.LocalLyricsFolder;
@@ -278,6 +282,45 @@ internal sealed class TrayContext : ApplicationContext
         try { Process.Start(new ProcessStartInfo(LocalUrl) { UseShellExecute = true }); } catch (Exception) { }
     }
 
+    /// <summary>
+    /// With LAN on, make sure Windows' firewall lets tablets in; if our rule is missing, offer the fix
+    /// (ask = a dialog right away, otherwise a hint in a balloon).
+    /// </summary>
+    private void CheckFirewallAsync(bool ask)
+    {
+        Task.Run(() =>
+        {
+            if (!_server.Lan || Firewall.HasRule()) return;
+            RunOnUi(() =>
+            {
+                if (ask) FixFirewall(ask: true);
+                else _tray.ShowBalloonTip(8000, "平板連不上流詞？",
+                    "Windows 防火牆可能擋住了區網連線。在系統匣的流詞圖示按右鍵 →「修復區網連線」。", ToolTipIcon.Info);
+            });
+        });
+    }
+
+    private void FixFirewall(bool ask)
+    {
+        if (ask)
+        {
+            var answer = MessageBox.Show(
+                "要讓同一個 Wi‑Fi 的平板、手機連得到流詞，需要在 Windows 防火牆開放流詞的連線。\n\n" +
+                "按「是」後 Windows 會詢問系統管理員權限，同意即可。之後更新流詞也不用再設定。",
+                "流詞・區網連線", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+            if (answer != DialogResult.Yes) return;
+        }
+        var port = _settings.Port;
+        Task.Run(() =>
+        {
+            var ok = Firewall.Fix(port);
+            RunOnUi(() => _tray.ShowBalloonTip(8000, ok ? "區網連線已開放" : "沒有完成防火牆設定",
+                ok ? (_lanUrls.Length > 0 ? $"平板或手機用瀏覽器打開 {_lanUrls[0]}" : "平板或手機用瀏覽器打開這台電腦的區網網址。")
+                   : "需要同意系統管理員權限才能設定。可以再從系統匣選單按「修復區網連線」。",
+                ok ? ToolTipIcon.Info : ToolTipIcon.Warning));
+        });
+    }
+
     private void ToggleLan()
     {
         var enable = !_server.Lan;
@@ -289,8 +332,8 @@ internal sealed class TrayContext : ApplicationContext
         if (enable && _server.Lan)
         {
             _tray.ShowBalloonTip(10000, "已允許區網裝置連線",
-                (_lanUrls.Length > 0 ? $"平板或手機連同一個 Wi‑Fi，用瀏覽器打開 {_lanUrls[0]}" : "找不到這台電腦的區網位址。") +
-                "\n如果 Windows 跳出防火牆詢問，請允許「私人網路」。", ToolTipIcon.Info);
+                _lanUrls.Length > 0 ? $"平板或手機連同一個 Wi‑Fi，用瀏覽器打開 {_lanUrls[0]}" : "找不到這台電腦的區網位址。", ToolTipIcon.Info);
+            CheckFirewallAsync(ask: true);
         }
         else if (enable)
         {

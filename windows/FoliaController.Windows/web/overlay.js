@@ -731,7 +731,8 @@
     if ($('fc-version')) $('fc-version').textContent = state.version ? '版本 ' + state.version : '';
     if (state.lan.enabled && state.lan.urls.length) {
       lan.innerHTML = '同一個 Wi‑Fi 下的平板或手機，用瀏覽器打開：<br>' +
-        state.lan.urls.map(function (u) { return '<code>' + u + '</code>'; }).join('<br>');
+        state.lan.urls.map(function (u) { return '<code>' + u + '</code>'; }).join('<br>') +
+        '<br><small>連不上的話：在系統匣的流詞圖示按右鍵 →「修復區網連線」。</small>';
     } else if (state.lan.enabled) {
       lan.textContent = '已允許區網連線，但找不到這台電腦的區網位址。';
     } else {
