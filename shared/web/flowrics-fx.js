@@ -545,7 +545,7 @@
       var main = ja ? (INK_FONTS_JA[S.opts.jaFont] || INK_FONTS_JA.shippori) : zh;
       U.useFontCss(main.css);
       if (zh !== main) U.useFontCss(zh.css);
-      var title = (S.title || '') + (S.artist || '') + '流夜《》書' + (extra || '');
+      var title = (S.title || '') + (S.artist || '') + '流夜《》' + (extra || '');
       U.loadFontFor(main.weight + ' 40px ' + main.family, (extra ? '' : all) + title);
       U.loadFontFor(main.bold + ' 40px ' + main.family, title);
       if (subs && !extra) U.loadFontFor(zh.weight + ' 40px ' + zh.family, subs);
@@ -930,9 +930,9 @@
         if (t > signAt) {
           var sz = Math.round(30 * S.scale);
           var room = Math.max(4, Math.floor((a.h - ss * 2.4 - a.h * 0.12) / (sz * 1.1)));
-          // title on the right, singer + 書 on its left, both standing on the seal
+          // title on the right, singer on its left, both standing on the seal
           var colsText = [Array.from('《' + S.title + '》').slice(0, room)];
-          if (S.artist) colsText.push(Array.from(S.artist + '書').slice(-room));
+          if (S.artist) colsText.push(Array.from(S.artist).slice(0, room));
           ctx.save();
           ctx.font = inkFont(sz);
           ctx.textAlign = 'center';
