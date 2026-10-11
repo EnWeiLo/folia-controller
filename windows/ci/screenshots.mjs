@@ -20,19 +20,30 @@ async function shoot(name, options, actions, mode = 'classic') {
   await context.addInitScript((m) => {
     try { if (!localStorage.getItem('fc.mode')) localStorage.setItem('fc.mode', JSON.stringify(m)); } catch (e) { /* */ }
   }, mode);
+  // A software-rendered page can stall the browser; never let one shot hang the whole job.
+  let timer;
+  const limit = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('shot took over 120 s')), 120000); });
   try {
+    await Promise.race([limit, run(context)]);
+  } catch (e) {
+    errors.push(`${name}: ${e.message.split('\n')[0]}`);
+  } finally {
+    clearTimeout(timer);
+    await Promise.race([context.close(), new Promise((r) => setTimeout(r, 10000))]);
+  }
+  async function run(context) {
     const page = await context.newPage();
     page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error' && /flowrics/.test(m.text())) errors.push(`${name}: ${m.text()}`); });
     await page.goto(`http://127.0.0.1:${port}/`);
     await page.waitForTimeout(9000);
     await actions(page);
-    await page.screenshot({ path: `${outDir}/${name}.png`, timeout: 60000 });
-    console.log(`saved ${name}.png`);
-  } catch (e) {
-    errors.push(`${name}: screenshot failed: ${e.message.split('\n')[0]}`);
-  } finally {
-    await context.close();
+    try {
+      await page.screenshot({ path: `${outDir}/${name}.png`, timeout: 60000 });
+      console.log(`saved ${name}.png`);
+    } catch (e) {
+      errors.push(`${name}: screenshot failed: ${e.message.split('\n')[0]}`);
+    }
   }
 }
 
@@ -110,5 +121,6 @@ for (const [fx, opts] of [
   }, 'fx:' + fx);
 }
 
-await browser.close();
+await Promise.race([browser.close(), new Promise((r) => setTimeout(r, 15000))]);
 console.log(errors.length ? 'page errors:\n' + errors.join('\n') : 'no page errors');
+process.exit(0);
