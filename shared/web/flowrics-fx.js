@@ -484,8 +484,8 @@
   };
 
   /** Every lyric line cut into columns (a line always starts a new column), for the vertical layouts. */
-  function inkColumns(S, U, size, colH, font) {
-    var st = S.store, key = S.lines.length + '|' + Math.round(size) + '|' + Math.round(colH) + '|' + S.w;
+  function inkColumns(S, U, size, colH, font, fontKey) {
+    var st = S.store, key = S.lines.length + '|' + Math.round(size) + '|' + Math.round(colH) + '|' + S.w + '|' + fontKey;
     if (st.inkKey === key) return st.inkCols;
     var cols = [];
     S.lines.forEach(function (l, li) {
@@ -510,6 +510,56 @@
     return cols;
   }
 
+  // 墨染's fonts: Google Fonts, or slices built by tools/build-webfonts.py on the `fonts` branch (jsDelivr).
+  var GF = 'https://fonts.googleapis.com/css2?display=swap&family=';
+  var JSD = 'https://cdn.jsdelivr.net/gh/EnWeiLo/folia-controller@fonts/';
+  var INK_FONTS_ZH = {
+    wenkai: { family: '"LXGW WenKai TC"', weight: 400, bold: 700, css: GF + 'LXGW+WenKai+TC:wght@400;700' },
+    notoserif: { family: '"Noto Serif TC"', weight: 600, bold: 800, css: GF + 'Noto+Serif+TC:wght@400;600;800' },
+    genryu: { family: '"GenRyuMin2 TW"', weight: 400, bold: 400, css: JSD + 'genryumin/font.css' },
+    twkai: { family: '"TW-Kai"', weight: 400, bold: 400, css: JSD + 'twkai/font.css' },
+    iansui: { family: '"Iansui"', weight: 400, bold: 400, css: GF + 'Iansui' },
+  };
+  var INK_FONTS_JA = {
+    shippori: { family: '"Shippori Mincho"', weight: 600, bold: 800, css: GF + 'Shippori+Mincho:wght@400;600;800' },
+    zenold: { family: '"Zen Old Mincho"', weight: 600, bold: 900, css: GF + 'Zen+Old+Mincho:wght@400;600;900' },
+    notojp: { family: '"Noto Serif JP"', weight: 600, bold: 800, css: GF + 'Noto+Serif+JP:wght@400;600;800' },
+    // Windows has 游明朝; elsewhere しっぽり明朝 stands in
+    yumincho: { family: '"Yu Mincho","YuMincho","Shippori Mincho"', weight: 600, bold: 700, css: GF + 'Shippori+Mincho:wght@400;600;800' },
+    klee: { family: '"Klee One"', weight: 600, bold: 600, css: GF + 'Klee+One:wght@400;600' },
+  };
+  /**
+   * The font maker for this song: Japanese lyrics (any kana) get the 日文字體, everything else the
+   * 中文字體; translations under the lyrics always use the 中文字體. Starts the web font download for
+   * the song's characters.
+   */
+  function inkFontFor(S, U) {
+    var st = S.store;
+    var key = S.opts.zhFont + '|' + S.opts.jaFont + '|' + S.lines.length + '|' + (S.lines[0] && S.lines[0].start) + '|' + S.title;
+    if (st.inkFontKey !== key) {
+      st.inkFontKey = key;
+      var all = S.lines.map(function (l) { return l.text; }).join('');
+      var subs = S.lines.map(function (l) { return (l.trans || '') + (l.roma || ''); }).join('');
+      var ja = /[\u3040-\u30ff]/.test(all);
+      var zh = INK_FONTS_ZH[S.opts.zhFont] || INK_FONTS_ZH.wenkai;
+      var main = ja ? (INK_FONTS_JA[S.opts.jaFont] || INK_FONTS_JA.shippori) : zh;
+      U.useFontCss(main.css);
+      if (zh !== main) U.useFontCss(zh.css);
+      var title = (S.title || '') + (S.artist || '') + '流夜';
+      U.loadFontFor(main.weight + ' 40px ' + main.family, all + title);
+      U.loadFontFor(main.bold + ' 40px ' + main.family, title);
+      if (subs) U.loadFontFor(zh.weight + ' 40px ' + zh.family, subs);
+      st.inkFonts = { main: main, zh: zh, id: (ja ? 'ja-' : 'zh-') + (ja ? S.opts.jaFont : S.opts.zhFont) };
+    }
+    var f = st.inkFonts;
+    var make = function (size, bold, sub) {
+      var d = sub ? f.zh : f.main;
+      return (bold ? d.bold : d.weight) + ' ' + Math.max(1, Math.round(size)) + 'px ' + d.family + ',' + U.SERIF;
+    };
+    make.id = f.id;
+    return make;
+  }
+
   F.register('ink', {
     label: '墨染', desc: '墨字在紙上慢慢暈開，中文直書', background: 'self', subtitle: 'self',
     options: [
@@ -525,8 +575,23 @@
         ['celadon', '青瓷（淡青釉色、藍灰墨）'],
         ['indigo', '靛夜（深藍夜色、銀白字）'],
       ] },
+      { id: 'zhFont', label: '中文字體', def: 'wenkai', choices: [
+        ['wenkai', '楷書（霞鶩文楷）'],
+        ['notoserif', '明體（思源宋體）'],
+        ['genryu', '復古明體（源流明體）'],
+        ['twkai', '標準楷書（全字庫正楷體）'],
+        ['iansui', '手寫（芫荽）'],
+      ] },
+      { id: 'jaFont', label: '日文字體', def: 'shippori', choices: [
+        ['shippori', '小說明朝（しっぽり明朝）'],
+        ['zenold', '古典明朝（Zen Old Mincho）'],
+        ['notojp', '標準明朝（Noto Serif JP）'],
+        ['yumincho', '游明朝（Windows 內建，其他裝置用小說明朝）'],
+        ['klee', '手寫（Klee One）'],
+      ] },
     ],
     draw: function (ctx, S, U) {
+      var inkFont = inkFontFor(S, U);
       var a = U.area(), st = S.store, t = S.t, pal = S.palette;
       var theme = INK_THEMES[S.opts.theme] || INK_THEMES.paper;
       var themeId = INK_THEMES[S.opts.theme] ? S.opts.theme : 'paper';
@@ -563,7 +628,7 @@
           ctx.fill();
         }
         ctx.fillStyle = theme.sealText;
-        ctx.font = U.font(ss * 0.62, 800, 'serif');
+        ctx.font = inkFont(ss * 0.62, true);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(Array.from(S.title)[0] || '流', ss / 2, ss / 2 + ss * 0.03);
@@ -575,10 +640,10 @@
         ctx.fillStyle = ink;
         if (theme.glow) { ctx.shadowColor = theme.glow; ctx.shadowBlur = 18 * S.scale; }
         ctx.textAlign = 'center';
-        ctx.font = U.font(64 * S.scale, 700, 'serif');
+        ctx.font = inkFont(64 * S.scale, true);
         ctx.fillText(S.title, S.w / 2, a.h * 0.46, S.w * 0.8);
         ctx.globalAlpha = idle * 0.6;
-        ctx.font = U.font(28 * S.scale, 400, 'serif');
+        ctx.font = inkFont(28 * S.scale);
         ctx.fillText(S.artist, S.w / 2, a.h * 0.46 + 56 * S.scale, S.w * 0.8);
         ctx.restore();
       }
@@ -615,12 +680,12 @@
       if (theme.glow) { ctx.shadowColor = theme.glow; ctx.shadowBlur = 0; }
       if (vertical) {
         var size = Math.round(Math.min(66 * S.scale, a.w / 9));
-        var font = U.font(size, 600, 'serif');
+        var font = inkFont(size);
         var perCol = Math.max(4, Math.floor(a.h * 0.72 / (size * 1.08)));
         var colH = perCol * size * 1.08, colGap = size * 1.65;
         var topY = a.h * 0.12;
         ctx.font = font;
-        var cols = inkColumns(S, U, size, colH, font);
+        var cols = inkColumns(S, U, size, colH, font, inkFont.id + '|' + S.fontEpoch);
         // the column being written: the newest one with a character already on the paper
         var cur = -1;
         for (var ci = 0; ci < cols.length; ci++) { if (cols[ci].start - 120 <= t) cur = ci; else break; }
@@ -678,7 +743,7 @@
         var line = S.line && !S.line.gap ? S.line : null;
         var sub = line ? U.subtitleText(line) : '';
         if (sub) {
-          ctx.font = U.font(24 * S.scale, 400, 'serif');
+          ctx.font = inkFont(24 * S.scale, false, true);
           ctx.fillStyle = theme.sub;
           ctx.globalAlpha = U.smooth((t - line.start) / 600) * fade;
           ctx.fillText(sub, a.w / 2, a.h - 44 * S.scale, a.w * 0.9);
@@ -687,8 +752,8 @@
       } else {
         list.forEach(function (p) {
           var l = p.line;
-          var size = U.fit(l, 'ink', 62 * S.scale, 600, 'serif', a.w * 0.8, 3, 1.3);
-          var font = U.font(size, 600, 'serif');
+          var size = U.fit(l, 'ink' + inkFont.id, 62 * S.scale, 600, 'serif', a.w * 0.8, 3, 1.3);
+          var font = inkFont(size);
           var P = U.place(l, font, a.w * 0.8, size * 1.3, a.w / 2, a.h * 0.44 - p.exit * 40 * S.scale, 'center');
           ctx.font = font;
           ctx.textAlign = 'left';
@@ -708,7 +773,7 @@
           if (sub) {
             ctx.globalAlpha = (1 - p.exit) * U.smooth(p.age / 600);
             ctx.textAlign = 'center';
-            ctx.font = U.font(26 * S.scale, 400, 'serif');
+            ctx.font = inkFont(26 * S.scale, false, true);
             ctx.fillStyle = theme.sub;
             ctx.fillText(sub, a.w / 2, P.top + P.height + 40 * S.scale, a.w * 0.9);
           }

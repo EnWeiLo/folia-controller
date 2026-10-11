@@ -663,6 +663,37 @@
     return true;
   };
 
+  // ---------- web fonts ----------
+  // Effects may use web fonts that arrive after the first frames: measure again once they do.
+  S.fontEpoch = 0;
+  if (document.fonts && document.fonts.addEventListener) {
+    document.fonts.addEventListener('loadingdone', function () {
+      measureCache = {};
+      S.lines.forEach(function (l) { l._layout = null; });
+      S.fontEpoch++;
+    });
+  }
+  var fontLinks = {};
+  /** Adds a font stylesheet once (e.g. Google Fonts' css2 URL). */
+  U.useFontCss = function (url) {
+    if (!url || fontLinks[url]) return;
+    fontLinks[url] = true;
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = url;
+    link.crossOrigin = 'anonymous';
+    (document.head || document.documentElement).appendChild(link);
+  };
+  var fontWants = {};
+  /** Asks the browser to fetch the parts of a web font that `text` needs (CJK fonts come in slices). */
+  U.loadFontFor = function (font, text) {
+    if (!document.fonts || !document.fonts.load) return;
+    var key = font + '|' + text.length + '|' + text.slice(0, 40);
+    if (fontWants[key]) return;
+    fontWants[key] = true;
+    document.fonts.load(font, text).catch(function () { /* offline: the fallback font stays */ });
+  };
+
   Flowrics.start = function () {
     var id = params.get('fx') || 'dive';
     if (!effects[id]) id = order[0];

@@ -1,0 +1,68 @@
+name: Web fonts
+
+# Builds the 墨染 web fonts that Google Fonts doesn't have (源流明體, 全字庫正楷體) and publishes them
+# to the `fonts` branch; the app loads them through jsDelivr
+# (https://cdn.jsdelivr.net/gh/<repo>@fonts/<id>/font.css). Only needs to run when the script changes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - tools/build-webfonts.py
+      - .github/workflows/fonts.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fonts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install fonttools brotli
+      - name: Download the fonts
+        run: |
+          set -e
+          mkdir -p src
+          # 源流明體 TW, Regular (SIL OFL 1.1)
+          curl -fsSL -o src/GenRyuMin2TW-R.otf \
+            "https://raw.githubusercontent.com/ButTaiwan/genryu-font/master/otf/TW/GenRyuMin2TW-R.otf" || \
+          curl -fsSL -o src/GenRyuMin2TW-R.otf \
+            "https://raw.githubusercontent.com/ButTaiwan/genryu-font/main/otf/TW/GenRyuMin2TW-R.otf"
+          # 全字庫正楷體 (SIL OFL 1.1 / 政府資料開放授權條款), from data.gov.tw dataset 5961
+          curl -fsSL -A "Mozilla/5.0" -o src/Fonts_Kai.zip "https://www.cns11643.gov.tw/opendata/Fonts_Kai.zip"
+          unzip -o -q src/Fonts_Kai.zip -d src/kai
+          find src -type f -iname '*.?tf' -exec ls -la {} \;
+      - name: Google's slicing for Noto Serif TC
+        run: |
+          curl -fsSL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36" \
+            "https://fonts.googleapis.com/css2?family=Noto+Serif+TC" -o src/google.css
+          grep -c unicode-range src/google.css
+      - name: Build
+        run: |
+          KAI=$(find src/kai -type f -iname 'TW-Kai-98*.ttf' ! -iname '*Ext*' ! -iname '*Plus*' | head -1)
+          echo "kai: $KAI"
+          python tools/build-webfonts.py src/GenRyuMin2TW-R.otf "$KAI" src/google.css out
+          cat > out/README.md <<'EOF'
+          Web fonts for 流詞 Flowrics' 墨染 effect, built by tools/build-webfonts.py.
+          - genryumin/: 源流明體 GenRyuMin2 TW Regular — ButTaiwan, SIL Open Font License 1.1
+            (based on Source Han Serif, © Adobe, Reserved Font Name "Source").
+          - twkai/: 全字庫正楷體 TW-Kai — 國家發展委員會 全字庫 (CNS11643), SIL Open Font License 1.1 /
+            政府資料開放授權條款第1版.
+          EOF
+          du -sh out/*
+      - name: Publish to the fonts branch
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd out
+          git init -q -b fonts
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Web fonts from ${{ github.sha }}"
+          git push -q --force "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git" fonts

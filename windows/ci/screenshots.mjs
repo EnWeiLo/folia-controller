@@ -106,6 +106,7 @@ await shoot('tuning-panel', { viewport: { width: 1600, height: 900 } }, async (p
 
 // Flowrics' own effects (/fx.html): the launcher must route there and the effect must draw.
 for (const [fx, opts] of [
+  ['ink', { viewport: { width: 1600, height: 900 } }],
   ['dive', { viewport: { width: 1600, height: 900 } }],
   ['boom', { viewport: { width: 1600, height: 900 } }],
   ['fireworks', { viewport: { width: 1600, height: 900 } }],

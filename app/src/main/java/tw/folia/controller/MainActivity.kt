@@ -71,8 +71,8 @@ class MainActivity : Activity() {
         )
         // Flowrics' own effects (shared/web/flowrics-fx*.js); ids are "fx:<effect>".
         private val FX_MODES = listOf(
-            Mode("fx:dive", "潛入"), Mode("fx:minimal", "極簡"), Mode("fx:karaoke", "卡拉OK"),
-            Mode("fx:cinema", "電影字幕"), Mode("fx:ink", "墨染"), Mode("fx:ripple", "液面"),
+            Mode("fx:ink", "墨染"), Mode("fx:dive", "潛入"), Mode("fx:minimal", "極簡"),
+            Mode("fx:karaoke", "卡拉OK"), Mode("fx:cinema", "電影字幕"), Mode("fx:ripple", "液面"),
             Mode("fx:stardust", "星塵"), Mode("fx:neon", "霓虹"), Mode("fx:vinyl", "黑膠"),
             Mode("fx:comic", "漫畫對白"), Mode("fx:terminal", "終端"), Mode("fx:danmaku", "彈幕"),
             Mode("fx:led", "LED 看板"),
@@ -82,7 +82,7 @@ class MainActivity : Activity() {
             Mode("fx:vortex", "漩渦"), Mode("fx:fireworks", "煙火"), Mode("fx:jelly", "果凍"),
             Mode("fx:warp", "曲速"), Mode("fx:shatter", "碎玻璃"),
         )
-        private const val DEFAULT_MODE = "classic"
+        private const val DEFAULT_MODE = "fx:ink"
         private fun modeLabel(id: String?): String =
             (FX_MODES + WILD_MODES + MODES).firstOrNull { it.id == id }?.label ?: (id ?: "")
         private val QUALITIES = listOf(

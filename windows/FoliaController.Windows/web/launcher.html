@@ -31,7 +31,7 @@
     'danmaku', 'led', 'boom', 'meteor', 'glitch', 'vortex', 'fireworks', 'jelly', 'warp', 'shatter'];
   var SUBTITLES = ['translation', 'romanization', 'both', 'none'];
   var subtitle = get('subtitle', 'translation');
-  var mode = get('mode', 'classic');
+  var mode = get('mode', 'fx:ink');
   if (typeof mode === 'string' && mode.indexOf('fx:') === 0) {
     var fx = mode.slice(3);
     if (FX.indexOf(fx) < 0) fx = 'dive';

@@ -34,14 +34,14 @@
     ['cappella', '群唱'], ['tilt', '傾訴'], ['claddagh', '回環'], ['diorama', '鏡台'], ['pendolo', '時計'],
     ['sonnet', '商籟'], ['tempera', '凝彩'], ['lumiere', '繪光'], ['still', '靜止'],
     ['', '流詞特效'],
-    ['fx:dive', '潛入'], ['fx:minimal', '極簡'], ['fx:karaoke', '卡拉OK'], ['fx:cinema', '電影字幕'], ['fx:ink', '墨染'],
+    ['fx:ink', '墨染'], ['fx:dive', '潛入'], ['fx:minimal', '極簡'], ['fx:karaoke', '卡拉OK'], ['fx:cinema', '電影字幕'],
     ['fx:ripple', '液面'], ['fx:stardust', '星塵'], ['fx:neon', '霓虹'], ['fx:vinyl', '黑膠'], ['fx:comic', '漫畫對白'],
     ['fx:terminal', '終端'], ['fx:danmaku', '彈幕'], ['fx:led', 'LED 看板'],
     ['', '誇張特效'],
     ['fx:boom', '爆破'], ['fx:meteor', '隕石'], ['fx:glitch', '故障'], ['fx:vortex', '漩渦'], ['fx:fireworks', '煙火'],
     ['fx:jelly', '果凍'], ['fx:warp', '曲速'], ['fx:shatter', '碎玻璃'],
   ];
-  var DEFAULT_MODE = 'classic';
+  var DEFAULT_MODE = 'fx:ink';
   // On Flowrics' own effect page there is no Folia to tune.
   var isFx = location.pathname === '/fx.html';
   var OFFSETS = [-1000, -500, -250, 0, 250, 500, 750, 1000, 1500];
