@@ -511,11 +511,12 @@
   }
 
   F.register('ink', {
-    label: '墨染', desc: '墨字在紙上慢慢暈開，中文直書、由右往左', background: 'self', subtitle: 'self',
+    label: '墨染', desc: '墨字在紙上慢慢暈開，中文直書', background: 'self', subtitle: 'self',
     options: [
       { id: 'layout', label: '排版', def: 'page', choices: [
         ['page', '翻頁（由右往左寫，寫滿一頁就翻頁）'],
         ['scroll', '捲軸（由右往左寫，舊的字往右滑走）'],
+        ['ltr', '左到右（由左往右寫，舊的字往左滑走）'],
       ] },
       { id: 'theme', label: '配色', def: 'paper', choices: [
         ['paper', '宣紙（米白紙、黑墨）'],
@@ -631,14 +632,16 @@
           });
         };
         if (cur >= 0) {
-          if (S.opts.layout === 'scroll') {
-            // 捲軸: the column being written sits left of centre; older ones slide right and fade out
-            var anchor = a.w * 0.36;
+          if (S.opts.layout === 'scroll' || S.opts.layout === 'ltr') {
+            // 捲軸 (right to left): the column being written sits left of centre, older ones slide right.
+            // 左到右: mirrored — written left to right, the newest right of centre, older ones slide left.
+            var dir = S.opts.layout === 'ltr' ? -1 : 1;
+            var anchor = dir > 0 ? a.w * 0.36 : a.w * 0.64;
             st.scroll = st.scroll == null || Math.abs(st.scroll - cur) > 6 ? cur : st.scroll + (cur - st.scroll) * (1 - Math.pow(0.03, S.dt / 1000));
             for (var k = cur; k >= 0; k--) {
-              var x = anchor + (st.scroll - k) * colGap;
-              if (x > a.w + colGap) break;
-              var edge = U.smooth((a.w - x) / (a.w * 0.3));
+              var x = anchor + dir * (st.scroll - k) * colGap;
+              if (x > a.w + colGap || x < -colGap) break;
+              var edge = U.smooth((dir > 0 ? a.w - x : x) / (a.w * 0.3));
               drawCol(cols[k], x, fade * edge);
             }
           } else {
