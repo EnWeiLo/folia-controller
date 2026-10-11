@@ -535,6 +535,7 @@
       '<div class="fc-panel-head"><h2>設定</h2><button class="fc-btn fc-small" id="fc-close" aria-label="關閉">' + icon('close') + '</button></div>' +
       '<div class="fc-section">這台裝置的畫面</div>' +
       selectRow('fc-mode', '歌詞動畫', MODES) +
+      fxOptionRows() +
       (isFx ? '' : '<div class="fc-row"><label>動畫與外觀細節<small id="fc-tuning-note">每種動畫的細部設定、字型、副歌詞區、背景</small></label>' +
         '<button class="fc-text-btn" id="fc-tuning-open">調整…</button></div>') +
       (qualityApplies ? selectRow('fc-quality', '畫質', qualityOptions, '越低越流暢，歌詞文字依然清晰') : '') +
@@ -558,6 +559,10 @@
 
     $('fc-close').onclick = function () { openPanel(false); };
     if (!isFx) $('fc-tuning-open').onclick = openTuning;
+    fxOptionList().forEach(function (o) {
+      // Flowrics' effect options apply at once (the effect redraws), and are kept per device.
+      $('fc-fxopt-' + o.id).onchange = function () { window.Flowrics.setOption(o.id, this.value); };
+    });
     $('fc-mode').onchange = function () { store.set('mode', this.value); reloadWithSettings(); };
     if (qualityApplies) {
       $('fc-quality').onchange = function () {
@@ -587,7 +592,21 @@
     if (el) el.setAttribute('aria-checked', on ? 'true' : 'false');
   }
 
+  // The current Flowrics effect's own options (墨染's 排版 and 配色, …), on the fx page only.
+  function fxOptionList() {
+    var info = isFx && window.Flowrics && window.Flowrics.options ? window.Flowrics.options() : null;
+    return info ? info.options : [];
+  }
+  function fxOptionRows() {
+    return fxOptionList().map(function (o) {
+      return selectRow('fc-fxopt-' + o.id, o.label, o.choices.map(function (c) {
+        return [c[0], c[1].replace(/（.*）$/, '')];
+      }), o.choices.map(function (c) { return /（(.*)）$/.exec(c[1]); }).some(Boolean) ? '特效選項，立即套用' : '');
+    }).join('');
+  }
+
   function syncPanel() {
+    fxOptionList().forEach(function (o) { var el = $('fc-fxopt-' + o.id); if (el) el.value = o.value; });
     $('fc-mode').value = store.get('mode', DEFAULT_MODE);
     var changed = window.FcTuning ? window.FcTuning.changedCount() : 0;
     if (!isFx) $('fc-tuning-note').textContent = changed ? '已調整 ' + changed + ' 項（每種動畫的細部設定、字型、副歌詞區、背景）' : '每種動畫的細部設定、字型、副歌詞區、背景';

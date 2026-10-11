@@ -55,6 +55,7 @@
     audio: { power: 0, bass: 0, lowMid: 0, mid: 0, vocal: 0, treble: 0, spectrum: new Uint8Array(0), pulse: 0, live: false },
     subtitleMode: subtitleMode,
     fx: null, fxId: '',
+    opts: {},                        // the effect's options (排版、配色…), saved per device
     store: {},                       // the effect's own scratch space (reset on song / effect change)
   };
 
@@ -626,6 +627,42 @@
     if (fx.subtitle !== 'self') drawEngineSubtitle();
   }
 
+  // ---------- per-effect options ----------
+  // An effect may list options: [{ id, label, def, choices: [[value, label], …] }]. The chosen values
+  // are kept per device in localStorage, so the Windows bar and the Android settings just call setOption.
+  var OPTS_KEY = 'flowrics.options';
+  function savedOptions() {
+    try { return JSON.parse(localStorage.getItem(OPTS_KEY) || '{}') || {}; } catch (e) { return {}; }
+  }
+  function loadOptions() {
+    var all = savedOptions(), mine = all[S.fxId] || {}, out = {};
+    (S.fx.options || []).forEach(function (o) {
+      var ok = o.choices.some(function (c) { return c[0] === mine[o.id]; });
+      out[o.id] = ok ? mine[o.id] : o.def;
+    });
+    S.opts = out;
+  }
+  /** The current effect's options with their values, or null if it has none. */
+  Flowrics.options = function () {
+    if (!S.fx || !S.fx.options || !S.fx.options.length) return null;
+    return {
+      effect: S.fxId,
+      label: S.fx.label,
+      options: S.fx.options.map(function (o) {
+        return { id: o.id, label: o.label, value: S.opts[o.id], choices: o.choices };
+      }),
+    };
+  };
+  Flowrics.setOption = function (id, value) {
+    var all = savedOptions();
+    all[S.fxId] = all[S.fxId] || {};
+    all[S.fxId][id] = value;
+    try { localStorage.setItem(OPTS_KEY, JSON.stringify(all)); } catch (e) { /* private mode */ }
+    loadOptions();
+    S.store = {};
+    return true;
+  };
+
   Flowrics.start = function () {
     var id = params.get('fx') || 'dive';
     if (!effects[id]) id = order[0];
@@ -635,6 +672,7 @@
     document.documentElement.style.background = '#000';
     document.body.style.cssText += ';margin:0;background:#000;overflow:hidden';
     resize();
+    loadOptions();
     if (S.fx.init) S.fx.init(S, U);
     connect();
     requestAnimationFrame(frame);

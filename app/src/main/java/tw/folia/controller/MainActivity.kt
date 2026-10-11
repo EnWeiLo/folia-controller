@@ -1049,6 +1049,54 @@ class MainActivity : Activity() {
         }
     }
 
+    /** The current Flowrics effect's own options (墨染's 排版 and 配色, …), read from the page. */
+    private fun showFxOptions() {
+        webView.evaluateJavascript("JSON.stringify(window.Flowrics&&Flowrics.options&&Flowrics.options())") { raw ->
+            val info = try {
+                val text = org.json.JSONArray("[$raw]").optString(0, "null")
+                if (text == "null") null else JSONObject(text)
+            } catch (e: Exception) {
+                null
+            }
+            if (info == null) {
+                android.widget.Toast.makeText(this, "這個特效沒有可以調整的選項", android.widget.Toast.LENGTH_SHORT).show()
+                showSettings()
+                return@evaluateJavascript
+            }
+            val options = info.getJSONArray("options")
+            val labels = (0 until options.length()).map { i ->
+                val o = options.getJSONObject(i)
+                val choices = o.getJSONArray("choices")
+                val current = (0 until choices.length()).map { choices.getJSONArray(it) }
+                    .firstOrNull { it.getString(0) == o.optString("value") }?.getString(1)?.substringBefore("（") ?: ""
+                "${o.getString("label")}：$current"
+            }
+            glassDialog()
+                .setTitle("${info.optString("label")}・特效選項")
+                .setItems(labels.toTypedArray()) { _, which -> pickFxOption(options.getJSONObject(which)) }
+                .setNegativeButton("返回") { _, _ -> showSettings() }
+                .setOnDismissListener { enterImmersive() }
+                .show()
+        }
+    }
+
+    private fun pickFxOption(option: JSONObject) {
+        val choices = option.getJSONArray("choices")
+        val values = (0 until choices.length()).map { choices.getJSONArray(it).getString(0) }
+        val names = (0 until choices.length()).map { choices.getJSONArray(it).getString(1) }
+        glassDialog()
+            .setTitle(option.getString("label"))
+            .setSingleChoiceItems(names.toTypedArray(), values.indexOf(option.optString("value"))) { dialog, which ->
+                dialog.dismiss()
+                webView.evaluateJavascript(
+                    "Flowrics.setOption(${JSONObject.quote(option.getString("id"))},${JSONObject.quote(values[which])})",
+                ) { showFxOptions() }
+            }
+            .setNegativeButton("返回") { _, _ -> showFxOptions() }
+            .setOnDismissListener { enterImmersive() }
+            .show()
+    }
+
     private fun showAbout() {
         val version = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: ""
@@ -1316,7 +1364,7 @@ class MainActivity : Activity() {
             "歌詞時間偏移：${if (offset > 0) "+" else ""}${offset} ms",
             "保持螢幕常亮：${onOff("keep_screen_on", true)}",
             "本機歌詞資料夾：${LocalLyrics.folderLabel ?: "未設定"}",
-            if (isFx) "動畫與外觀細節（Folia 動畫專用）" else "動畫與外觀細節（字型、背景、各動畫細部設定）",
+            if (isFx) "特效選項（排版、配色…）" else "動畫與外觀細節（字型、背景、各動畫細部設定）",
             "跟著音樂律動：${onOff("audio_reactive", false)}",
             "手勢說明",
             "重新載入畫面",
@@ -1336,10 +1384,7 @@ class MainActivity : Activity() {
                     7 -> pickOffset()
                     8 -> { toggle("keep_screen_on", true); applyKeepScreenOn(); showSettings() }
                     9 -> pickLyricsFolder()
-                    10 -> if (isFx) {
-                        android.widget.Toast.makeText(this, "這是 Folia 動畫的細節設定，流詞特效不需要調整", android.widget.Toast.LENGTH_LONG).show()
-                        showSettings()
-                    } else openTuning()
+                    10 -> if (isFx) showFxOptions() else openTuning()
                     11 -> toggleAudio()
                     12 -> showGestureTutorial()
                     13 -> loadFolia()

@@ -349,65 +349,230 @@
   });
 
   // =====================================================================
-  // 墨染 Ink — ink bleeding into paper; CJK lyrics are written in vertical columns.
+  // 墨染 Ink — ink bleeding into paper. CJK lyrics are written in vertical columns that run from
+  // right to left like a book: 翻頁 fills a page and turns it, 捲軸 unrolls like a hand scroll.
+  // Five colour schemes (配色).
   // =====================================================================
+  function inkPaperBase(g, S, U, top, bottom, coverAlpha, coverFilter) {
+    var lg = g.createLinearGradient(0, 0, 0, S.h);
+    lg.addColorStop(0, top);
+    lg.addColorStop(1, bottom);
+    g.fillStyle = lg;
+    g.fillRect(0, 0, S.w, S.h);
+    if (S.cover && coverAlpha > 0) {
+      g.save();
+      g.globalAlpha = coverAlpha;
+      g.filter = coverFilter;
+      var sc = Math.max(S.w / S.cover.width, S.h / S.cover.height) * 1.1;
+      g.drawImage(S.cover, (S.w - S.cover.width * sc) / 2, (S.h - S.cover.height * sc) / 2, S.cover.width * sc, S.cover.height * sc);
+      g.restore();
+    }
+  }
+  function inkFibres(g, S, U, color, n) {
+    var r = U.rand(7);
+    g.strokeStyle = color;
+    g.lineWidth = Math.max(1, S.scale);
+    for (var i = 0; i < n; i++) {
+      var x = r() * S.w, y = r() * S.h, ang = r() * Math.PI;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(ang) * 30 * S.scale, y + Math.sin(ang) * 30 * S.scale); g.stroke();
+    }
+  }
+  function inkVignette(g, S, rgb, alpha) {
+    var vg = g.createRadialGradient(S.w / 2, S.h / 2, Math.min(S.w, S.h) * 0.3, S.w / 2, S.h / 2, Math.max(S.w, S.h) * 0.75);
+    vg.addColorStop(0, 'rgba(' + rgb + ',0)');
+    vg.addColorStop(1, 'rgba(' + rgb + ',' + alpha + ')');
+    g.fillStyle = vg;
+    g.fillRect(0, 0, S.w, S.h);
+  }
+  var INK_THEMES = {
+    // 宣紙: warm rice paper, black ink, a red seal
+    paper: {
+      paint: function (g, S, U) {
+        inkPaperBase(g, S, U, U.hsl(S.palette.hue, 18, 93), U.hsl(S.palette.hue, 16, 89), 0.16, 'blur(' + Math.round(S.w / 30) + 'px) grayscale(0.4)');
+        inkFibres(g, S, U, 'rgba(90,70,40,0.05)', 260);
+        inkVignette(g, S, '60,40,20', 0.22);
+      },
+      ink: function () { return '#1b1814'; },
+      blot: '20,16,12', blotAlpha: 0.16, sub: 'rgba(40,32,24,0.72)',
+      seal: 'rgba(178,34,34,0.86)', sealText: '#f3ece0',
+    },
+    // 夜金: near-black lacquer with gold, pearly lettering that shimmers slowly
+    gold: {
+      paint: function (g, S, U) {
+        inkPaperBase(g, S, U, '#14110d', '#080706', 0.1, 'blur(' + Math.round(S.w / 24) + 'px) grayscale(1) brightness(0.6)');
+        var r = U.rand(19);
+        for (var i = 0; i < 220; i++) {
+          g.fillStyle = 'rgba(222,186,96,' + (0.04 + r() * 0.14) + ')';
+          var s = (0.6 + r() * 1.8) * S.scale;
+          g.fillRect(r() * S.w, r() * S.h, s, s);
+        }
+        inkFibres(g, S, U, 'rgba(230,200,140,0.025)', 160);
+        inkVignette(g, S, '0,0,0', 0.55);
+      },
+      ink: function (ctx, S) {
+        var sh = Math.sin(S.now / 5200) * S.w * 0.35;
+        var gr = ctx.createLinearGradient(sh - S.w * 0.2, 0, sh + S.w * 1.1, S.h);
+        gr.addColorStop(0, '#a87a24');
+        gr.addColorStop(0.18, '#e9c46a');
+        gr.addColorStop(0.32, '#fff3d2');
+        gr.addColorStop(0.4, '#f4dcef');
+        gr.addColorStop(0.48, '#f1d488');
+        gr.addColorStop(0.64, '#c9973a');
+        gr.addColorStop(0.8, '#f8e6b0');
+        gr.addColorStop(0.9, '#e4f0e6');
+        gr.addColorStop(1, '#b5852b');
+        return gr;
+      },
+      glow: 'rgba(233,196,106,0.4)', blot: '233,196,106', blotAlpha: 0.12, sub: 'rgba(236,218,170,0.78)',
+      seal: '#c9a14a', sealText: '#14110d',
+    },
+    // 封面: the album cover, blurred and dimmed, with warm white ink
+    cover: {
+      paint: function (g, S, U) {
+        inkPaperBase(g, S, U, U.hsl(S.palette.hue, 30, 16), U.hsl(S.palette.hue, 30, 8), 0.9, 'blur(' + Math.round(S.w / 22) + 'px) saturate(1.25)');
+        g.fillStyle = 'rgba(0,0,0,0.42)';
+        g.fillRect(0, 0, S.w, S.h);
+        inkFibres(g, S, U, 'rgba(255,255,255,0.025)', 160);
+        inkVignette(g, S, '0,0,0', 0.5);
+      },
+      ink: function () { return '#f8f4ea'; },
+      glow: 'rgba(0,0,0,0.55)', blot: '255,255,255', blotAlpha: 0.1, sub: 'rgba(255,255,255,0.78)',
+      seal: null, sealText: '#fff',
+    },
+    // 青瓷: pale celadon glaze, blue-grey ink, vermilion seal
+    celadon: {
+      paint: function (g, S, U) {
+        inkPaperBase(g, S, U, '#d9e6de', '#c3d6cc', 0.1, 'blur(' + Math.round(S.w / 30) + 'px) grayscale(0.7)');
+        // crackle glaze
+        var r = U.rand(23);
+        g.strokeStyle = 'rgba(60,90,80,0.07)';
+        g.lineWidth = Math.max(1, S.scale);
+        for (var i = 0; i < 70; i++) {
+          var x = r() * S.w, y = r() * S.h;
+          g.beginPath(); g.moveTo(x, y);
+          for (var k = 0; k < 4; k++) { x += (r() - 0.5) * 90 * S.scale; y += (r() - 0.5) * 90 * S.scale; g.lineTo(x, y); }
+          g.stroke();
+        }
+        inkVignette(g, S, '30,60,55', 0.2);
+      },
+      ink: function () { return '#1d3140'; },
+      blot: '29,49,64', blotAlpha: 0.14, sub: 'rgba(29,49,64,0.72)',
+      seal: 'rgba(196,58,36,0.88)', sealText: '#e6efe9',
+    },
+    // 靛夜: deep indigo night, moonlight, silver lettering
+    indigo: {
+      paint: function (g, S, U) {
+        inkPaperBase(g, S, U, '#121c38', '#060a17', 0.08, 'blur(' + Math.round(S.w / 24) + 'px) grayscale(1)');
+        var mg = g.createRadialGradient(S.w * 0.18, S.h * 0.14, 0, S.w * 0.18, S.h * 0.14, Math.max(S.w, S.h) * 0.45);
+        mg.addColorStop(0, 'rgba(220,230,255,0.13)');
+        mg.addColorStop(1, 'rgba(220,230,255,0)');
+        g.fillStyle = mg;
+        g.fillRect(0, 0, S.w, S.h);
+        inkFibres(g, S, U, 'rgba(200,215,255,0.03)', 160);
+        inkVignette(g, S, '0,0,10', 0.45);
+      },
+      ink: function (ctx, S) {
+        var gr = ctx.createLinearGradient(0, 0, 0, S.h);
+        gr.addColorStop(0, '#f4f7ff');
+        gr.addColorStop(0.5, '#cdd7ea');
+        gr.addColorStop(1, '#eef2fb');
+        return gr;
+      },
+      glow: 'rgba(170,195,255,0.35)', blot: '200,215,255', blotAlpha: 0.1, sub: 'rgba(214,224,244,0.75)',
+      seal: null, sealOutline: '#c9d4ea', sealText: '#c9d4ea',
+    },
+  };
+
+  /** Every lyric line cut into columns (a line always starts a new column), for the vertical layouts. */
+  function inkColumns(S, U, size, colH, font) {
+    var st = S.store, key = S.lines.length + '|' + Math.round(size) + '|' + Math.round(colH) + '|' + S.w;
+    if (st.inkKey === key) return st.inkCols;
+    var cols = [];
+    S.lines.forEach(function (l, li) {
+      if (!l || l.gap || !l.text || !l.text.trim()) return;
+      var col = null, run = 0;
+      U.chars(l).forEach(function (c) {
+        var side = !U.hasCJK(c.ch);
+        var adv = side ? U.measure(c.ch, font) : size * 1.08;
+        if (!col || (run + adv > colH && run > 0)) {
+          if (!c.ch.trim() && col) return; // no column starting with a space
+          col = { line: li, start: c.start, chars: [] };
+          cols.push(col);
+          run = 0;
+        }
+        col.chars.push({ ch: c.ch, start: c.start, side: side, pos: run + adv / 2 });
+        run += adv;
+      });
+    });
+    st.inkKey = key;
+    st.inkCols = cols;
+    st.inkPages = null;
+    return cols;
+  }
+
   F.register('ink', {
-    label: '墨染', desc: '宣紙上的墨字慢慢暈開，中文直書', background: 'self', subtitle: 'self',
+    label: '墨染', desc: '墨字在紙上慢慢暈開，中文直書、由右往左', background: 'self', subtitle: 'self',
+    options: [
+      { id: 'layout', label: '排版', def: 'page', choices: [
+        ['page', '翻頁（由右往左寫，寫滿一頁就翻頁）'],
+        ['scroll', '捲軸（由右往左寫，舊的字往右滑走）'],
+      ] },
+      { id: 'theme', label: '配色', def: 'paper', choices: [
+        ['paper', '宣紙（米白紙、黑墨）'],
+        ['gold', '夜金（暗色底、金色珠光字）'],
+        ['cover', '封面（專輯封面模糊當背景）'],
+        ['celadon', '青瓷（淡青釉色、藍灰墨）'],
+        ['indigo', '靛夜（深藍夜色、銀白字）'],
+      ] },
+    ],
     draw: function (ctx, S, U) {
       var a = U.area(), st = S.store, t = S.t, pal = S.palette;
-      // paper
+      var theme = INK_THEMES[S.opts.theme] || INK_THEMES.paper;
+      var themeId = INK_THEMES[S.opts.theme] ? S.opts.theme : 'paper';
+      // background
       var paper = U.offscreen('paper', S.w, S.h);
-      if (st.paperKey !== S.w + 'x' + S.h + '|' + (S.cover ? S._coverUrl : '')) {
-        st.paperKey = S.w + 'x' + S.h + '|' + (S.cover ? S._coverUrl : '');
-        var g = paper.getContext('2d');
-        g.fillStyle = U.hsl(pal.hue, 18, 92);
-        g.fillRect(0, 0, S.w, S.h);
-        if (S.cover) {
-          g.save();
-          g.globalAlpha = 0.16;
-          g.filter = 'blur(' + Math.round(S.w / 30) + 'px) grayscale(0.4)';
-          var sc = Math.max(S.w / S.cover.width, S.h / S.cover.height);
-          g.drawImage(S.cover, (S.w - S.cover.width * sc) / 2, (S.h - S.cover.height * sc) / 2, S.cover.width * sc, S.cover.height * sc);
-          g.restore();
-        }
-        // fibres
-        var r = U.rand(7);
-        g.strokeStyle = 'rgba(90,70,40,0.05)';
-        g.lineWidth = 1;
-        for (var i = 0; i < 260; i++) {
-          var x = r() * S.w, y = r() * S.h, ang = r() * Math.PI;
-          g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(ang) * 30 * S.scale, y + Math.sin(ang) * 30 * S.scale); g.stroke();
-        }
-        var vg = g.createRadialGradient(S.w / 2, S.h / 2, Math.min(S.w, S.h) * 0.3, S.w / 2, S.h / 2, Math.max(S.w, S.h) * 0.75);
-        vg.addColorStop(0, 'rgba(60,40,20,0)');
-        vg.addColorStop(1, 'rgba(60,40,20,0.22)');
-        g.fillStyle = vg;
-        g.fillRect(0, 0, S.w, S.h);
+      var pk = themeId + '|' + S.w + 'x' + S.h + '|' + (S.cover ? S._coverUrl : '') + '|' + Math.round(pal.hue);
+      if (st.paperKey !== pk) {
+        st.paperKey = pk;
+        var pg = paper.getContext('2d');
+        pg.save();
+        theme.paint(pg, S, U);
+        pg.restore();
       }
       ctx.drawImage(paper, 0, 0);
-      var ink = '#1b1814';
-      // seal in the corner
+      var ink = theme.ink(ctx, S);
+      var sealFill = theme.seal === null && !theme.sealOutline ? U.hsl(pal.hue, 55, 42, 0.9) : theme.seal;
+
+      var list = U.active(900);
+      var idle = U.idle(list);
+      // seal, bottom-left
       if (S.title) {
-        var ss = 70 * S.scale;
+        var ss = 64 * S.scale;
         ctx.save();
-        ctx.translate(a.w - ss * 1.6, ss * 0.9);
-        ctx.rotate(0.04);
-        ctx.fillStyle = 'rgba(178,34,34,0.85)';
-        roundRect(ctx, 0, 0, ss, ss, ss * 0.12);
-        ctx.fill();
-        ctx.fillStyle = U.hsl(pal.hue, 18, 92);
+        ctx.translate(ss * 0.9, a.h - ss * 1.9);
+        ctx.rotate(-0.04);
+        if (theme.sealOutline) {
+          ctx.strokeStyle = theme.sealOutline;
+          ctx.lineWidth = Math.max(1.5, 3 * S.scale);
+          roundRect(ctx, 0, 0, ss, ss, ss * 0.12);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = sealFill;
+          roundRect(ctx, 0, 0, ss, ss, ss * 0.12);
+          ctx.fill();
+        }
+        ctx.fillStyle = theme.sealText;
         ctx.font = U.font(ss * 0.62, 800, 'serif');
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(Array.from(S.title)[0] || '流', ss / 2, ss / 2 + ss * 0.03);
         ctx.restore();
       }
-      var list = U.active(900);
-      var idle = U.idle(list);
       if (idle > 0.01 && S.title) {
         ctx.save();
         ctx.globalAlpha = idle;
         ctx.fillStyle = ink;
+        if (theme.glow) { ctx.shadowColor = theme.glow; ctx.shadowBlur = 18 * S.scale; }
         ctx.textAlign = 'center';
         ctx.font = U.font(64 * S.scale, 700, 'serif');
         ctx.fillText(S.title, S.w / 2, a.h * 0.46, S.w * 0.8);
@@ -416,78 +581,105 @@
         ctx.fillText(S.artist, S.w / 2, a.h * 0.46 + 56 * S.scale, S.w * 0.8);
         ctx.restore();
       }
+
+      // one written character, with ink spreading under it while it's fresh
+      function writeChar(ch, side, x, y, start, size, alpha) {
+        var since = t - start + 120;
+        if (since <= 0 || alpha <= 0.01) return;
+        var e = U.clamp(since / 700, 0, 1);
+        if (e < 1) {
+          var sb = ctx.shadowBlur;
+          ctx.shadowBlur = 0;
+          var rr = size * (0.3 + e * 0.5);
+          var bg = ctx.createRadialGradient(x, y, 0, x, y, rr);
+          bg.addColorStop(0, 'rgba(' + theme.blot + ',' + (theme.blotAlpha * (1 - e) * alpha) + ')');
+          bg.addColorStop(1, 'rgba(' + theme.blot + ',0)');
+          ctx.fillStyle = bg;
+          ctx.fillRect(x - rr, y - rr, rr * 2, rr * 2);
+          ctx.shadowBlur = sb;
+        }
+        ctx.globalAlpha = alpha * U.outCubic(e);
+        if (e < 1) ctx.filter = 'blur(' + ((1 - e) * size * 0.12).toFixed(1) + 'px)';
+        ctx.fillStyle = ink;
+        if (side) { ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 2); ctx.fillText(ch, 0, 0); ctx.restore(); }
+        else ctx.fillText(ch, x, y);
+        ctx.filter = 'none';
+        ctx.globalAlpha = 1;
+      }
+
       var vertical = S.lines.length && U.hasCJK(S.lines.map(function (l) { return l.text; }).join('').slice(0, 200));
       ctx.save();
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
+      if (theme.glow) { ctx.shadowColor = theme.glow; ctx.shadowBlur = 0; }
       if (vertical) {
-        // columns from right to left; the current line on the right, earlier ones drift left and fade
         var size = Math.round(Math.min(66 * S.scale, a.w / 9));
-        var perCol = Math.max(4, Math.floor(a.h * 0.74 / (size * 1.08)));
-        var colGap = size * 1.65;
-        var baseX = a.w * 0.66, topY = a.h * 0.13;
-        st.lx = st.lx || {};
-        var offset = 0;
-        for (var li = S.idx; li >= Math.max(0, S.idx - 6); li--) {
-          var l = S.lines[li];
-          if (!l || l.gap || !l.text) continue;
-          var chars = U.chars(l);
-          // CJK stands upright, Latin lies on its side (like vertical Japanese)
-          var colH = perCol * size * 1.08, col = 0, run = 0;
-          ctx.font = U.font(size, 600, 'serif');
-          chars.forEach(function (c) {
-            c.side = !U.hasCJK(c.ch);
-            c.adv = c.side ? U.measure(c.ch, ctx.font) : size * 1.08;
-            if (run + c.adv > colH && run > 0) { col++; run = 0; }
-            c.col = col; c.pos = run + c.adv / 2;
-            run += c.adv;
+        var font = U.font(size, 600, 'serif');
+        var perCol = Math.max(4, Math.floor(a.h * 0.72 / (size * 1.08)));
+        var colH = perCol * size * 1.08, colGap = size * 1.65;
+        var topY = a.h * 0.12;
+        ctx.font = font;
+        var cols = inkColumns(S, U, size, colH, font);
+        // the column being written: the newest one with a character already on the paper
+        var cur = -1;
+        for (var ci = 0; ci < cols.length; ci++) { if (cols[ci].start - 120 <= t) cur = ci; else break; }
+        var fade = 1 - idle;
+        if (theme.glow) ctx.shadowBlur = size * 0.22;
+        var drawCol = function (c, x, alpha) {
+          c.chars.forEach(function (ch) {
+            if (ch.ch.trim()) writeChar(ch.ch, ch.side, x, topY + ch.pos, ch.start, size, alpha);
           });
-          var cols = col + 1;
-          // older lines slide to the left as new ones are written
-          var targetX = baseX - offset * colGap;
-          var x0 = st.lx[l.start] == null ? targetX : st.lx[l.start];
-          x0 += (targetX - x0) * (1 - Math.pow(0.02, S.dt / 1000));
-          st.lx[l.start] = x0;
-          var age = U.clamp(1 - offset * 0.2, 0, 1) * U.smooth((x0 + colGap) / (a.w * 0.2));
-          offset += cols;
-          age *= 1 - idle;
-          if (age <= 0.02) continue;
-          ctx.font = U.font(size, 600, 'serif');
-          chars.forEach(function (c) {
-            if (!c.ch.trim()) return;
-            var x = x0 - c.col * colGap;
-            var y = topY + c.pos;
-            var since = t - c.start + 120;
-            if (since <= 0) return;
-            var e = U.clamp(since / 700, 0, 1);
-            // ink spreading under the stroke
-            if (e < 1) {
-              var rr = size * (0.3 + e * 0.5);
-              var bg = ctx.createRadialGradient(x, y, 0, x, y, rr);
-              bg.addColorStop(0, 'rgba(20,16,12,' + (0.16 * (1 - e)) + ')');
-              bg.addColorStop(1, 'rgba(20,16,12,0)');
-              ctx.fillStyle = bg;
-              ctx.fillRect(x - rr, y - rr, rr * 2, rr * 2);
+        };
+        if (cur >= 0) {
+          if (S.opts.layout === 'scroll') {
+            // 捲軸: the column being written sits left of centre; older ones slide right and fade out
+            var anchor = a.w * 0.36;
+            st.scroll = st.scroll == null || Math.abs(st.scroll - cur) > 6 ? cur : st.scroll + (cur - st.scroll) * (1 - Math.pow(0.03, S.dt / 1000));
+            for (var k = cur; k >= 0; k--) {
+              var x = anchor + (st.scroll - k) * colGap;
+              if (x > a.w + colGap) break;
+              var edge = U.smooth((a.w - x) / (a.w * 0.3));
+              drawCol(cols[k], x, fade * edge);
             }
-            ctx.globalAlpha = age * U.outCubic(e);
-            if (e < 1) ctx.filter = 'blur(' + ((1 - e) * size * 0.12).toFixed(1) + 'px)';
-            ctx.fillStyle = ink;
-            if (c.side) { ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 2); ctx.fillText(c.ch, 0, 0); ctx.restore(); }
-            else ctx.fillText(c.ch, x, y);
-            ctx.filter = 'none';
-            ctx.globalAlpha = 1;
-          });
-          // translation under the current column block
-          if (li === S.idx) {
-            var sub = U.subtitleText(l);
-            if (sub) {
-              ctx.font = U.font(24 * S.scale, 400, 'serif');
-              ctx.fillStyle = 'rgba(40,32,24,0.7)';
-              ctx.globalAlpha = U.smooth((t - l.start) / 600);
-              ctx.fillText(sub, a.w / 2, a.h - 50 * S.scale, a.w * 0.9);
-              ctx.globalAlpha = 1;
+          } else {
+            // 翻頁: right to left across the page; a full page fades away and the next starts on the right
+            if (!st.inkPages) {
+              var cap = Math.max(2, Math.floor(a.w * 0.84 / colGap)), pages = [], page = 0, used = 0;
+              cols.forEach(function (c, i) {
+                var lineCols = 0;
+                for (var j = i; j < cols.length && cols[j].line === c.line; j++) lineCols++;
+                var firstOfLine = i === 0 || cols[i - 1].line !== c.line;
+                // keep a line on one page when it fits
+                if (used > 0 && (used >= cap || (firstOfLine && lineCols <= cap && used + lineCols > cap))) { page++; used = 0; }
+                pages[i] = { page: page, slot: used };
+                used++;
+              });
+              st.inkPages = { cap: cap, at: pages };
+            }
+            var P = st.inkPages, curPage = P.at[cur].page;
+            if (st.page !== curPage) { st.prevPage = st.page; st.page = curPage; st.turnAt = S.now; }
+            var right = a.w / 2 + (P.cap - 1) * colGap / 2;
+            var turn = U.clamp((S.now - (st.turnAt || 0)) / 900, 0, 1);
+            for (var k2 = 0; k2 <= cur; k2++) {
+              var pa = P.at[k2];
+              var alpha = 0;
+              if (pa.page === curPage) alpha = fade;
+              else if (pa.page === st.prevPage && turn < 1) alpha = fade * (1 - U.smooth(turn));
+              if (alpha <= 0.01) continue;
+              drawCol(cols[k2], right - pa.slot * colGap, alpha);
             }
           }
+        }
+        ctx.shadowBlur = 0;
+        // translation at the bottom
+        var line = S.line && !S.line.gap ? S.line : null;
+        var sub = line ? U.subtitleText(line) : '';
+        if (sub) {
+          ctx.font = U.font(24 * S.scale, 400, 'serif');
+          ctx.fillStyle = theme.sub;
+          ctx.globalAlpha = U.smooth((t - line.start) / 600) * fade;
+          ctx.fillText(sub, a.w / 2, a.h - 44 * S.scale, a.w * 0.9);
+          ctx.globalAlpha = 1;
         }
       } else {
         list.forEach(function (p) {
@@ -497,6 +689,7 @@
           var P = U.place(l, font, a.w * 0.8, size * 1.3, a.w / 2, a.h * 0.44 - p.exit * 40 * S.scale, 'center');
           ctx.font = font;
           ctx.textAlign = 'left';
+          if (theme.glow) ctx.shadowBlur = size * 0.22;
           P.tokens.forEach(function (tk) {
             var e = U.clamp((t - tk.start + 120) / 700, 0, 1);
             if (e <= 0) return;
@@ -507,12 +700,13 @@
             ctx.fillText(tk.text, tk.x, tk.y);
             ctx.filter = 'none';
           });
+          ctx.shadowBlur = 0;
           var sub = U.subtitleText(l);
           if (sub) {
             ctx.globalAlpha = (1 - p.exit) * U.smooth(p.age / 600);
             ctx.textAlign = 'center';
             ctx.font = U.font(26 * S.scale, 400, 'serif');
-            ctx.fillStyle = 'rgba(40,32,24,0.7)';
+            ctx.fillStyle = theme.sub;
             ctx.fillText(sub, a.w / 2, P.top + P.height + 40 * S.scale, a.w * 0.9);
           }
         });
