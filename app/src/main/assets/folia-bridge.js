@@ -123,13 +123,17 @@
       el.style.width = g.w + 'px'; el.style.height = g.h + 'px';
       el.style.borderRadius = g.r + 'px';
       el.style.webkitBackdropFilter = f; el.style.backdropFilter = f;
+      clearTimeout(el._off);
+      if (el.style.display === 'none') { el.style.display = 'block'; void el.offsetWidth; }
       el.style.opacity = '1';
     } else {
       el.style.opacity = '0';
       // no blur work while hidden
       clearTimeout(el._off);
       el._off = setTimeout(function () {
-        if (el.style.opacity === '0') { el.style.backdropFilter = 'none'; el.style.webkitBackdropFilter = 'none'; }
+        if (el.style.opacity === '0') {
+          el.style.backdropFilter = 'none'; el.style.webkitBackdropFilter = 'none'; el.style.display = 'none';
+        }
       }, 260);
     }
   };

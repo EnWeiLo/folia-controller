@@ -52,12 +52,14 @@ sleep 2
 adb shell input tap $CX $CY
 sleep 1.5
 shot phone-card-hidden
-# Fling up: the settings dialog (glass)
-adb shell input swipe $CX $((H * 3 / 5)) $CX $((H / 5)) 120
-sleep 1.5
+
+# The glass dialogs
+launch --ez demo true --ez settings true
+sleep 18
 shot phone-settings
-adb shell input keyevent KEYCODE_BACK
-sleep 1
+launch --ez demo true --ez about true
+sleep 18
+shot phone-about
 
 launch --ez demo true --ez tuning true --es mode classic
 sleep 32

@@ -180,6 +180,9 @@ class MainActivity : Activity() {
             MediaHub.startDemo(demoCover())
             // CI screenshots of the 動畫與外觀 panel.
             if (intent.getBooleanExtra("tuning", false)) handler.postDelayed({ openTuning() }, 18000)
+            // CI screenshots of the glass dialogs.
+            if (intent.getBooleanExtra("settings", false)) handler.postDelayed({ showSettings() }, 14000)
+            if (intent.getBooleanExtra("about", false)) handler.postDelayed({ showAbout() }, 14000)
         }
         loadFolia()
         refreshUi()
