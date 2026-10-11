@@ -610,21 +610,69 @@
     S.prev = idx > 0 ? lines[idx - 1] : null;
     S.next = lines[idx + 1] || null;
 
+    // standby: nothing playing for a while → the 墨染 clock (fades in, and out when music starts)
+    var idle = !S.playing || !S.title;
+    if (!idle) S.idleSince = 0; else if (!S.idleSince) S.idleSince = now;
+    var wantStandby = S.fxId === 'clock' || (S.standbyEnabled && idle && now - S.idleSince > STANDBY_AFTER_MS);
+    S.standbyMix = U.clamp((S.standbyMix || 0) + (wantStandby ? 1 : -1) * S.dt / 900, 0, 1);
+    if (S.fxId === 'clock') S.standbyMix = 1;
+
     var fx = S.fx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.filter = 'none';
-    if (fx.background !== 'self') U.drawBackground(ctx);
-    try {
-      fx.draw(ctx, S, U);
-    } catch (e) {
-      if (!S._errorShown) { S._errorShown = true; console.error('[flowrics] ' + S.fxId, e); }
+    if (S.standbyMix < 1) {
+      resetCtx();
+      if (fx.background !== 'self') U.drawBackground(ctx);
+      try {
+        fx.draw(ctx, S, U);
+      } catch (e) {
+        if (!S._errorShown) { S._errorShown = true; console.error('[flowrics] ' + S.fxId, e); }
+      }
+      resetCtx();
+      if (fx.subtitle !== 'self') drawEngineSubtitle();
     }
+    if (S.standbyMix > 0 && effects.clock) drawStandby();
+  }
+
+  var STANDBY_AFTER_MS = 30000;
+  S.standbyEnabled = cfg.standby !== false;
+  function resetCtx() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.filter = 'none';
     ctx.shadowBlur = 0;
-    if (fx.subtitle !== 'self') drawEngineSubtitle();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  var standbyCanvas = null;
+  /** The clock, with 墨染's options and its own scratch space; through a layer while it fades. */
+  function drawStandby() {
+    var store = S.store, opts = S.opts;
+    S.store = S.clockStore || (S.clockStore = {});
+    S.opts = S.fxId === 'clock' ? opts : Flowrics.optionsOf('clock');
+    var target = ctx;
+    if (S.standbyMix < 1) {
+      if (!standbyCanvas) standbyCanvas = document.createElement('canvas');
+      if (standbyCanvas.width !== canvas.width || standbyCanvas.height !== canvas.height) {
+        standbyCanvas.width = canvas.width; standbyCanvas.height = canvas.height;
+      }
+      target = standbyCanvas.getContext('2d');
+    }
+    var saved = ctx;
+    try {
+      ctx = target;
+      resetCtx();
+      effects.clock.draw(target, S, U);
+    } catch (e) {
+      if (!S._clockError) { S._clockError = true; console.error('[flowrics] clock', e); }
+    } finally {
+      ctx = saved;
+      S.store = store;
+      S.opts = opts;
+    }
+    resetCtx();
+    if (target !== ctx) {
+      ctx.globalAlpha = U.smooth(S.standbyMix);
+      ctx.drawImage(standbyCanvas, 0, 0);
+      ctx.globalAlpha = 1;
+    }
   }
 
   // ---------- per-effect options ----------
@@ -634,29 +682,41 @@
   function savedOptions() {
     try { return JSON.parse(localStorage.getItem(OPTS_KEY) || '{}') || {}; } catch (e) { return {}; }
   }
-  function loadOptions() {
-    var all = savedOptions(), mine = all[S.fxId] || {}, out = {};
-    (S.fx.options || []).forEach(function (o) {
+  // An effect can share another's options (the standby clock uses 墨染's): optionsFrom: '<id>'.
+  function optionsKey(fx, id) { return fx.optionsFrom || id; }
+  function optionList(fx) { return fx.optionsFrom ? (effects[fx.optionsFrom].options || []) : (fx.options || []); }
+  /** Saved values (or defaults) of an effect's options. */
+  Flowrics.optionsOf = function (id) {
+    var fx = effects[id];
+    if (!fx) return {};
+    var all = savedOptions(), mine = all[optionsKey(fx, id)] || {}, out = {};
+    optionList(fx).forEach(function (o) {
       var ok = o.choices.some(function (c) { return c[0] === mine[o.id]; });
       out[o.id] = ok ? mine[o.id] : o.def;
     });
-    S.opts = out;
+    return out;
+  };
+  function loadOptions() {
+    S.opts = Flowrics.optionsOf(S.fxId);
+    S.clockStore = {};
   }
   /** The current effect's options with their values, or null if it has none. */
   Flowrics.options = function () {
-    if (!S.fx || !S.fx.options || !S.fx.options.length) return null;
+    var list = S.fx ? optionList(S.fx) : [];
+    if (!list.length) return null;
+    var owner = effects[optionsKey(S.fx, S.fxId)];
     return {
       effect: S.fxId,
-      label: S.fx.label,
-      options: S.fx.options.map(function (o) {
+      label: owner.label,
+      options: list.map(function (o) {
         return { id: o.id, label: o.label, value: S.opts[o.id], choices: o.choices };
       }),
     };
   };
   Flowrics.setOption = function (id, value) {
-    var all = savedOptions();
-    all[S.fxId] = all[S.fxId] || {};
-    all[S.fxId][id] = value;
+    var all = savedOptions(), key = optionsKey(S.fx, S.fxId);
+    all[key] = all[key] || {};
+    all[key][id] = value;
     try { localStorage.setItem(OPTS_KEY, JSON.stringify(all)); } catch (e) { /* private mode */ }
     loadOptions();
     S.store = {};

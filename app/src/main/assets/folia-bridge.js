@@ -107,12 +107,14 @@
 
   // Liquid glass: the app's info card is drawn natively over this page and is see-through, so
   // the page blurs what's under it. {on, x, y, w, h, r, blur} in CSS px.
+  // g.id names the pane ('card' — the info card, 'sheet' — the settings), each with its own element.
   window.__fcSetGlass = function (g) {
-    var el = document.getElementById('fc-glass');
+    var gid = 'fc-glass-' + ((g && g.id) || 'card');
+    var el = document.getElementById(gid);
     if (!el) {
       if (!g || !g.on) return;
       el = document.createElement('div');
-      el.id = 'fc-glass';
+      el.id = gid;
       el.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483000;opacity:0;' +
         'transition:opacity .22s ease;background:rgba(255,255,255,0.02)';
       (document.body || document.documentElement).appendChild(el);

@@ -27,7 +27,7 @@
     } catch (e) { return fallback; }
   }
   // Flowrics' own effects live on /fx.html (shared/web).
-  var FX = ['dive', 'minimal', 'karaoke', 'cinema', 'ink', 'ripple', 'stardust', 'neon', 'vinyl', 'comic', 'terminal',
+  var FX = ['clock', 'dive', 'minimal', 'karaoke', 'cinema', 'ink', 'ripple', 'stardust', 'neon', 'vinyl', 'comic', 'terminal',
     'danmaku', 'led', 'boom', 'meteor', 'glitch', 'vortex', 'fireworks', 'jelly', 'warp', 'shatter'];
   var SUBTITLES = ['translation', 'romanization', 'both', 'none'];
   var subtitle = get('subtitle', 'translation');
@@ -36,7 +36,7 @@
     var fx = mode.slice(3);
     if (FX.indexOf(fx) < 0) fx = 'dive';
     location.replace('/fx.html?fx=' + fx + '&host=' + encodeURIComponent(location.host) + '&cfg=' +
-      encodeURIComponent(JSON.stringify({ subtitleContentMode: SUBTITLES.indexOf(subtitle) >= 0 ? subtitle : 'translation' })));
+      encodeURIComponent(JSON.stringify({ subtitleContentMode: SUBTITLES.indexOf(subtitle) >= 0 ? subtitle : 'translation', standby: get('standby', true) !== false })));
     return;
   }
   if (MODES.indexOf(mode) < 0) mode = 'classic';

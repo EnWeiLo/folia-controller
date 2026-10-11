@@ -423,7 +423,7 @@
         gr.addColorStop(1, '#b5852b');
         return gr;
       },
-      glow: 'rgba(233,196,106,0.4)', blot: '233,196,106', blotAlpha: 0.12, sub: 'rgba(236,218,170,0.78)',
+      solid: '#e8c46c', glow: 'rgba(233,196,106,0.4)', blot: '233,196,106', blotAlpha: 0.12, sub: 'rgba(236,218,170,0.78)',
       seal: '#c9a14a', sealText: '#14110d',
     },
     // 封面: the album cover, blurred and dimmed, with warm white ink
@@ -478,7 +478,7 @@
         gr.addColorStop(1, '#eef2fb');
         return gr;
       },
-      glow: 'rgba(170,195,255,0.35)', blot: '200,215,255', blotAlpha: 0.1, sub: 'rgba(214,224,244,0.75)',
+      solid: '#e2e8f4', glow: 'rgba(170,195,255,0.35)', blot: '200,215,255', blotAlpha: 0.1, sub: 'rgba(214,224,244,0.75)',
       seal: null, sealOutline: '#c9d4ea', sealText: '#c9d4ea',
     },
   };
@@ -500,7 +500,7 @@
           cols.push(col);
           run = 0;
         }
-        col.chars.push({ ch: c.ch, start: c.start, side: side, pos: run + adv / 2 });
+        col.chars.push({ ch: c.ch, start: c.start, end: c.end, side: side, pos: run + adv / 2 });
         run += adv;
       });
     });
@@ -531,25 +531,32 @@
   /**
    * The font maker for this song: Japanese lyrics (any kana) get the 日文字體, everything else the
    * 中文字體; translations under the lyrics always use the 中文字體. Starts the web font download for
-   * the song's characters.
+   * the song's characters (and `extra`, e.g. the clock's numerals).
    */
-  function inkFontFor(S, U) {
+  function inkFontFor(S, U, extra) {
     var st = S.store;
-    var key = S.opts.zhFont + '|' + S.opts.jaFont + '|' + S.lines.length + '|' + (S.lines[0] && S.lines[0].start) + '|' + S.title;
+    var key = S.opts.zhFont + '|' + S.opts.jaFont + '|' + S.lines.length + '|' + (S.lines[0] && S.lines[0].start) + '|' + S.title + '|' + (extra || '');
     if (st.inkFontKey !== key) {
       st.inkFontKey = key;
       var all = S.lines.map(function (l) { return l.text; }).join('');
       var subs = S.lines.map(function (l) { return (l.trans || '') + (l.roma || ''); }).join('');
-      var ja = /[\u3040-\u30ff]/.test(all);
+      var ja = !extra && /[぀-ヿ]/.test(all);
       var zh = INK_FONTS_ZH[S.opts.zhFont] || INK_FONTS_ZH.wenkai;
       var main = ja ? (INK_FONTS_JA[S.opts.jaFont] || INK_FONTS_JA.shippori) : zh;
       U.useFontCss(main.css);
       if (zh !== main) U.useFontCss(zh.css);
-      var title = (S.title || '') + (S.artist || '') + '流夜';
-      U.loadFontFor(main.weight + ' 40px ' + main.family, all + title);
+      var title = (S.title || '') + (S.artist || '') + '流夜《》書' + (extra || '');
+      U.loadFontFor(main.weight + ' 40px ' + main.family, (extra ? '' : all) + title);
       U.loadFontFor(main.bold + ' 40px ' + main.family, title);
-      if (subs) U.loadFontFor(zh.weight + ' 40px ' + zh.family, subs);
-      st.inkFonts = { main: main, zh: zh, id: (ja ? 'ja-' : 'zh-') + (ja ? S.opts.jaFont : S.opts.zhFont) };
+      if (subs && !extra) U.loadFontFor(zh.weight + ' 40px ' + zh.family, subs);
+      st.inkFonts = { main: main, zh: zh, ja: ja, id: (ja ? 'ja-' : 'zh-') + (ja ? S.opts.jaFont : S.opts.zhFont) };
+      // 真實筆順: fetch the song's stroke data ahead of time
+      if (S.opts.write === 'stroke') {
+        var seen = {};
+        Array.from(extra || all).forEach(function (ch) {
+          if (!seen[ch] && U.hasCJK(ch)) { seen[ch] = 1; STROKES.get(ch, ja); }
+        });
+      }
     }
     var f = st.inkFonts;
     var make = function (size, bold, sub) {
@@ -557,45 +564,82 @@
       return (bold ? d.bold : d.weight) + ' ' + Math.max(1, Math.round(size)) + 'px ' + d.family + ',' + U.SERIF;
     };
     make.id = f.id;
+    make.ja = f.ja;
     return make;
   }
 
-  F.register('ink', {
-    label: '墨染', desc: '墨字在紙上慢慢暈開，中文直書', background: 'self', subtitle: 'self',
-    options: [
-      { id: 'layout', label: '排版', def: 'page', choices: [
-        ['page', '翻頁（由右往左寫，寫滿一頁就翻頁）'],
-        ['scroll', '捲軸（由右往左寫，舊的字往右滑走）'],
-        ['ltr', '左到右（由左往右寫，舊的字往左滑走）'],
-      ] },
-      { id: 'theme', label: '配色', def: 'paper', choices: [
-        ['paper', '宣紙（米白紙、黑墨）'],
-        ['gold', '夜金（暗色底、金色珠光字）'],
-        ['cover', '封面（專輯封面模糊當背景）'],
-        ['celadon', '青瓷（淡青釉色、藍灰墨）'],
-        ['indigo', '靛夜（深藍夜色、銀白字）'],
-      ] },
-      { id: 'zhFont', label: '中文字體', def: 'wenkai', choices: [
-        ['wenkai', '楷書（霞鶩文楷）'],
-        ['notoserif', '明體（思源宋體）'],
-        ['genryu', '復古明體（源流明體）'],
-        ['twkai', '標準楷書（全字庫正楷體）'],
-        ['iansui', '手寫（芫荽）'],
-      ] },
-      { id: 'jaFont', label: '日文字體', def: 'shippori', choices: [
-        ['shippori', '小說明朝（しっぽり明朝）'],
-        ['zenold', '古典明朝（Zen Old Mincho）'],
-        ['notojp', '標準明朝（Noto Serif JP）'],
-        ['yumincho', '游明朝（Windows 內建，其他裝置用小說明朝）'],
-        ['klee', '手寫（Klee One）'],
-      ] },
-    ],
-    draw: function (ctx, S, U) {
-      var inkFont = inkFontFor(S, U);
-      var a = U.area(), st = S.store, t = S.t, pal = S.palette;
-      var theme = INK_THEMES[S.opts.theme] || INK_THEMES.paper;
-      var themeId = INK_THEMES[S.opts.theme] ? S.opts.theme : 'paper';
-      // background
+  // ---------- stroke order ----------
+  // Chinese: Make Me a Hanzi's data as packaged by hanzi-writer-data (stroke outlines + medians,
+  // AR PL licence); Japanese: KanjiVG (stroke centre lines, CC BY-SA 3.0). Fetched per character.
+  var STROKES = (function () {
+    var cache = {}, svgHost = null;
+    function lengthOf(d) {
+      if (!svgHost) {
+        svgHost = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svgHost.setAttribute('width', '0');
+        svgHost.setAttribute('height', '0');
+        svgHost.style.cssText = 'position:absolute;left:-9px;top:-9px;width:0;height:0;overflow:hidden';
+        document.body.appendChild(svgHost);
+      }
+      var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', d);
+      svgHost.appendChild(p);
+      var len = 0;
+      try { len = p.getTotalLength(); } catch (e) { len = 50; }
+      svgHost.removeChild(p);
+      return len || 1;
+    }
+    function get(ch, ja) {
+      var key = (ja ? 'j' : 'h') + ch;
+      if (cache[key] !== undefined) return cache[key];
+      cache[key] = 'pending';
+      var done = function (v) { cache[key] = v; };
+      if (ja) {
+        var hex = ch.codePointAt(0).toString(16);
+        while (hex.length < 5) hex = '0' + hex;
+        fetch('https://cdn.jsdelivr.net/gh/KanjiVG/kanjivg@master/kanji/' + hex + '.svg')
+          .then(function (r) { return r.ok ? r.text() : null; })
+          .then(function (txt) {
+            if (!txt) return done(null);
+            var ds = [], re = /<path[^>]*\sd="([^"]+)"/g, m;
+            while ((m = re.exec(txt))) ds.push(m[1]);
+            if (!ds.length) return done(null);
+            done({ type: 'kvg', paths: ds.map(function (d) { return new Path2D(d); }), lens: ds.map(lengthOf) });
+          })
+          .catch(function () { done(null); });
+      } else {
+        fetch('https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0/' + encodeURIComponent(ch) + '.json')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            if (!j || !j.strokes || !j.medians) return done(null);
+            done({
+              type: 'hanzi',
+              strokes: j.strokes.map(function (d) { return new Path2D(d); }),
+              medians: j.medians.map(function (m) {
+                var len = 0;
+                for (var i = 1; i < m.length; i++) len += Math.hypot(m[i][0] - m[i - 1][0], m[i][1] - m[i - 1][1]);
+                return { pts: m, len: len || 1 };
+              }),
+            });
+          })
+          .catch(function () { done(null); });
+      }
+      return 'pending';
+    }
+    return { get: get };
+  })();
+
+  /**
+   * Everything 墨染 and its clock draw with: the paper, the ink, the seal, the fonts and one
+   * character being written (暈墨 / 筆刷 / 真實筆順).
+   */
+  function inkKit(ctx, S, U, extraText) {
+    var st = S.store, pal = S.palette, opts = S.opts;
+    var theme = INK_THEMES[opts.theme] || INK_THEMES.paper;
+    var themeId = INK_THEMES[opts.theme] ? opts.theme : 'paper';
+    var inkFont = inkFontFor(S, U, extraText);
+    var kit = { theme: theme, font: inkFont, ja: inkFont.ja };
+    kit.paper = function () {
       var paper = U.offscreen('paper', S.w, S.h);
       var pk = themeId + '|' + S.w + 'x' + S.h + '|' + (S.cover ? S._coverUrl : '') + '|' + Math.round(pal.hue);
       if (st.paperKey !== pk) {
@@ -606,34 +650,260 @@
         pg.restore();
       }
       ctx.drawImage(paper, 0, 0);
-      var ink = theme.ink(ctx, S);
+    };
+    kit.ink = theme.ink(ctx, S);
+    kit.solid = theme.solid || kit.ink;
+    kit.seal = function (x, y, ss, ch) {
       var sealFill = theme.seal === null && !theme.sealOutline ? U.hsl(pal.hue, 55, 42, 0.9) : theme.seal;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(-0.04);
+      if (theme.sealOutline) {
+        ctx.strokeStyle = theme.sealOutline;
+        ctx.lineWidth = Math.max(1.5, 3 * S.scale);
+        roundRect(ctx, 0, 0, ss, ss, ss * 0.12);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = sealFill;
+        roundRect(ctx, 0, 0, ss, ss, ss * 0.12);
+        ctx.fill();
+      }
+      ctx.fillStyle = theme.sealText;
+      ctx.font = inkFont(ss * 0.62, true);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ch || '流', ss / 2, ss / 2 + ss * 0.03);
+      ctx.restore();
+    };
+
+    function blot(x, y, size, e, alpha) {
+      var sb = ctx.shadowBlur;
+      ctx.shadowBlur = 0;
+      var rr = size * (0.3 + e * 0.5);
+      var bg = ctx.createRadialGradient(x, y, 0, x, y, rr);
+      bg.addColorStop(0, 'rgba(' + theme.blot + ',' + (theme.blotAlpha * (1 - e) * alpha) + ')');
+      bg.addColorStop(1, 'rgba(' + theme.blot + ',0)');
+      ctx.fillStyle = bg;
+      ctx.fillRect(x - rr, y - rr, rr * 2, rr * 2);
+      ctx.shadowBlur = sb;
+    }
+    function plain(ch, side, x, y) {
+      if (side) { ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 2); ctx.fillText(ch, 0, 0); ctx.restore(); }
+      else ctx.fillText(ch, x, y);
+    }
+    // 筆刷: the glyph appears where an unseen brush has passed — row by row, left to right
+    function brushed(ch, x, y, size, q) {
+      var B = Math.ceil(size * 1.5);
+      var c = U.offscreen('brush', B, B), g = c.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalCompositeOperation = 'source-over';
+      g.clearRect(0, 0, B, B);
+      g.font = ctx.font;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = kit.solid;
+      g.fillText(ch, B / 2, B / 2);
+      g.globalCompositeOperation = 'destination-in';
+      var rows = 4, box = size * 1.12, left = B / 2 - box / 2, top = B / 2 - box / 2;
+      var left2 = box * rows * q;
+      g.lineCap = 'round';
+      g.lineWidth = box / rows * 1.45;
+      g.strokeStyle = '#000';
+      g.beginPath();
+      for (var r = 0; r < rows && left2 > 0; r++) {
+        var yy = top + (r + 0.5) * box / rows, seg = Math.min(box, left2);
+        g.moveTo(left, yy);
+        g.lineTo(left + seg, yy);
+        left2 -= seg;
+      }
+      g.stroke();
+      g.globalCompositeOperation = 'source-over';
+      ctx.drawImage(c, x - B / 2, y - B / 2);
+    }
+    // 真實筆順
+    function stroked(d, x, y, size, q) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = kit.solid;
+      ctx.strokeStyle = kit.solid;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      var lens = d.type === 'hanzi' ? d.medians.map(function (m) { return m.len; }) : d.lens;
+      var total = lens.reduce(function (a2, b) { return a2 + b; }, 0) || 1;
+      var drawn = total * q;
+      if (d.type === 'hanzi') {
+        var s = size / 1024 * 1.16;
+        ctx.transform(s, 0, 0, -s, -512 * s, 388 * s);
+        for (var i = 0; i < d.strokes.length; i++) {
+          var L = lens[i];
+          if (drawn <= 0) break;
+          if (drawn >= L) { ctx.fill(d.strokes[i]); drawn -= L; continue; }
+          // part of this stroke: a fat line along its median, clipped to the stroke's shape
+          ctx.save();
+          ctx.clip(d.strokes[i]);
+          ctx.beginPath();
+          var pts = d.medians[i].pts, left3 = drawn;
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          for (var k = 1; k < pts.length && left3 > 0; k++) {
+            var seg = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+            if (seg <= left3) { ctx.lineTo(pts[k][0], pts[k][1]); left3 -= seg; }
+            else {
+              var f = left3 / seg;
+              ctx.lineTo(pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * f, pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * f);
+              left3 = 0;
+            }
+          }
+          ctx.lineWidth = 170;
+          ctx.stroke();
+          ctx.restore();
+          drawn = 0;
+        }
+      } else {
+        var k2 = size / 109 * 1.12;
+        ctx.scale(k2, k2);
+        ctx.translate(-54.5, -54.5);
+        ctx.lineWidth = 6.2;
+        for (var j = 0; j < d.paths.length; j++) {
+          var L2 = lens[j];
+          if (drawn <= 0) break;
+          if (drawn >= L2) { ctx.setLineDash([]); ctx.stroke(d.paths[j]); drawn -= L2; continue; }
+          ctx.setLineDash([drawn, L2 + 10]);
+          ctx.stroke(d.paths[j]);
+          ctx.setLineDash([]);
+          drawn = 0;
+        }
+      }
+      ctx.restore();
+    }
+    /** One character being (or already) written. `now` is the clock it's timed against. */
+    kit.write = function (ch, side, x, y, start, end, size, alpha, now) {
+      var since = now - start + 120;
+      if (since <= 0 || alpha <= 0.01) return;
+      var mode = opts.write || 'bleed';
+      var data = null;
+      if (mode === 'stroke' && !side && U.hasCJK(ch)) {
+        data = STROKES.get(ch, kit.ja);
+        if (data === 'pending') { if (since < 700) return; data = null; }
+      }
+      if (mode === 'bleed' || side || (mode === 'stroke' && !data && !U.hasCJK(ch))) {
+        var e = U.clamp(since / 700, 0, 1);
+        if (e < 1) blot(x, y, size, e, alpha);
+        ctx.globalAlpha = alpha * U.outCubic(e);
+        if (e < 1) ctx.filter = 'blur(' + ((1 - e) * size * 0.12).toFixed(1) + 'px)';
+        ctx.fillStyle = kit.ink;
+        plain(ch, side, x, y);
+        ctx.filter = 'none';
+        ctx.globalAlpha = 1;
+        return;
+      }
+      var dur = U.clamp(end - start, 300, data ? 1400 : 900);
+      var q = U.clamp(since / dur, 0, 1);
+      var fresh = U.clamp(since / (dur + 600), 0, 1);
+      if (fresh < 1) blot(x, y, size, fresh, alpha * 0.6);
+      ctx.globalAlpha = alpha;
+      if (data) stroked(data, x, y, size, q);
+      else if (q < 1) brushed(ch, x, y, size, q);
+      else { ctx.fillStyle = kit.ink; plain(ch, false, x, y); }
+      ctx.globalAlpha = 1;
+    };
+    return kit;
+  }
+
+  // 濺墨: a spatter of ink on strong beats, drying slowly
+  function inkSplashes(ctx, S, U, theme, a) {
+    var st = S.store;
+    st.splashes = st.splashes || [];
+    if (S.opts.splash !== 'off' && S.playing && S.audio.pulse > 0.75 && S.now - (st.lastSplash || 0) > 2600) {
+      st.lastSplash = S.now;
+      var seed = Math.floor(Math.random() * 1e9), r = U.rand(seed);
+      var R = (40 + r() * 70) * S.scale, c = document.createElement('canvas');
+      c.width = c.height = Math.ceil(R * 5);
+      var g = c.getContext('2d'), cx = c.width / 2;
+      g.fillStyle = 'rgba(' + theme.blot + ',1)';
+      g.beginPath();
+      for (var i = 0; i <= 28; i++) {
+        var ang = i / 28 * Math.PI * 2, rr = R * (0.55 + r() * 0.45);
+        var px = cx + Math.cos(ang) * rr, py = cx + Math.sin(ang) * rr;
+        if (i) g.lineTo(px, py); else g.moveTo(px, py);
+      }
+      g.closePath();
+      g.fill();
+      for (var k = 0; k < 18; k++) {
+        var ang2 = r() * Math.PI * 2, dist = R * (0.9 + r() * 1.3), dr = R * (0.04 + r() * 0.13);
+        g.beginPath();
+        g.arc(cx + Math.cos(ang2) * dist, cx + Math.sin(ang2) * dist, dr, 0, Math.PI * 2);
+        g.fill();
+      }
+      // keep clear of the middle, where the lyrics are
+      var sx = r() < 0.5 ? a.w * (0.04 + r() * 0.2) : a.w * (0.76 + r() * 0.2);
+      st.splashes.push({ c: c, x: sx, y: a.h * (0.1 + r() * 0.8), t0: S.now, rot: r() * 6.28 });
+      if (st.splashes.length > 6) st.splashes.shift();
+    }
+    st.splashes = st.splashes.filter(function (sp) { return S.now - sp.t0 < 9000; });
+    st.splashes.forEach(function (sp) {
+      var age = (S.now - sp.t0) / 9000;
+      ctx.save();
+      ctx.globalAlpha = theme.blotAlpha * 1.6 * U.smooth(age * 12) * (1 - U.smooth((age - 0.4) / 0.6));
+      ctx.translate(sp.x, sp.y);
+      ctx.rotate(sp.rot);
+      var sc = 0.85 + 0.15 * U.outCubic(age * 6);
+      ctx.scale(sc, sc);
+      ctx.drawImage(sp.c, -sp.c.width / 2, -sp.c.height / 2);
+      ctx.restore();
+    });
+  }
+
+  var INK_OPTIONS = [
+    { id: 'layout', label: '排版', def: 'page', choices: [
+      ['page', '翻頁（由右往左寫，寫滿一頁就翻頁）'],
+      ['scroll', '捲軸（由右往左寫，舊的字往右滑走）'],
+      ['ltr', '左到右（由左往右寫，舊的字往左滑走）'],
+    ] },
+    { id: 'write', label: '書寫方式', def: 'stroke', choices: [
+      ['stroke', '真實筆順（照筆順一筆一筆寫，缺字時改用筆刷）'],
+      ['brush', '筆刷（像毛筆刷過，任何字體都行）'],
+      ['bleed', '暈墨（字慢慢暈開）'],
+    ] },
+    { id: 'theme', label: '配色', def: 'paper', choices: [
+      ['paper', '宣紙（米白紙、黑墨）'],
+      ['gold', '夜金（暗色底、金色珠光字）'],
+      ['cover', '封面（專輯封面模糊當背景）'],
+      ['celadon', '青瓷（淡青釉色、藍灰墨）'],
+      ['indigo', '靛夜（深藍夜色、銀白字）'],
+    ] },
+    { id: 'zhFont', label: '中文字體', def: 'wenkai', choices: [
+      ['wenkai', '楷書（霞鶩文楷）'],
+      ['notoserif', '明體（思源宋體）'],
+      ['genryu', '復古明體（源流明體）'],
+      ['twkai', '標準楷書（全字庫正楷體）'],
+      ['iansui', '手寫（芫荽）'],
+    ] },
+    { id: 'jaFont', label: '日文字體', def: 'shippori', choices: [
+      ['shippori', '小說明朝（しっぽり明朝）'],
+      ['zenold', '古典明朝（Zen Old Mincho）'],
+      ['notojp', '標準明朝（Noto Serif JP）'],
+      ['yumincho', '游明朝（Windows 內建，其他裝置用小說明朝）'],
+      ['klee', '手寫（Klee One）'],
+    ] },
+    { id: 'splash', label: '濺墨', def: 'on', choices: [['on', '開（重拍時紙上濺出墨點）'], ['off', '關']] },
+    { id: 'sign', label: '落款', def: 'on', choices: [['on', '開（歌曲最後寫上歌名與歌手）'], ['off', '關']] },
+  ];
+
+  F.register('ink', {
+    label: '墨染', desc: '墨字在紙上一筆一筆寫出來，中文直書', background: 'self', subtitle: 'self',
+    options: INK_OPTIONS,
+    draw: function (ctx, S, U) {
+      var kit = inkKit(ctx, S, U);
+      var inkFont = kit.font, theme = kit.theme;
+      var a = U.area(), st = S.store, t = S.t;
+      kit.paper();
+      inkSplashes(ctx, S, U, theme, a);
+      var ink = kit.ink;
 
       var list = U.active(900);
       var idle = U.idle(list);
-      // seal, bottom-left
-      if (S.title) {
-        var ss = 64 * S.scale;
-        ctx.save();
-        ctx.translate(ss * 0.9, a.h - ss * 1.9);
-        ctx.rotate(-0.04);
-        if (theme.sealOutline) {
-          ctx.strokeStyle = theme.sealOutline;
-          ctx.lineWidth = Math.max(1.5, 3 * S.scale);
-          roundRect(ctx, 0, 0, ss, ss, ss * 0.12);
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = sealFill;
-          roundRect(ctx, 0, 0, ss, ss, ss * 0.12);
-          ctx.fill();
-        }
-        ctx.fillStyle = theme.sealText;
-        ctx.font = inkFont(ss * 0.62, true);
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(Array.from(S.title)[0] || '流', ss / 2, ss / 2 + ss * 0.03);
-        ctx.restore();
-      }
+      var ss = 64 * S.scale;
+      if (S.title) kit.seal(ss * 0.9, a.h - ss * 1.9, ss, Array.from(S.title)[0]);
       if (idle > 0.01 && S.title) {
         ctx.save();
         ctx.globalAlpha = idle;
@@ -647,30 +917,40 @@
         ctx.fillText(S.artist, S.w / 2, a.h * 0.46 + 56 * S.scale, S.w * 0.8);
         ctx.restore();
       }
+      var writeChar = function (ch, side, x, y, start, end, size, alpha) {
+        kit.write(ch, side, x, y, start, end, size, alpha, t);
+      };
 
-      // one written character, with ink spreading under it while it's fresh
-      function writeChar(ch, side, x, y, start, size, alpha) {
-        var since = t - start + 120;
-        if (since <= 0 || alpha <= 0.01) return;
-        var e = U.clamp(since / 700, 0, 1);
-        if (e < 1) {
-          var sb = ctx.shadowBlur;
-          ctx.shadowBlur = 0;
-          var rr = size * (0.3 + e * 0.5);
-          var bg = ctx.createRadialGradient(x, y, 0, x, y, rr);
-          bg.addColorStop(0, 'rgba(' + theme.blot + ',' + (theme.blotAlpha * (1 - e) * alpha) + ')');
-          bg.addColorStop(1, 'rgba(' + theme.blot + ',0)');
-          ctx.fillStyle = bg;
-          ctx.fillRect(x - rr, y - rr, rr * 2, rr * 2);
-          ctx.shadowBlur = sb;
+      // 落款: once the last line has been sung, the song's name and singer in small characters
+      // above the seal, written like the lyrics
+      var sung = S.lines.filter(function (l) { return !l.gap && l.text; });
+      var last = sung[sung.length - 1];
+      if (S.opts.sign !== 'off' && last && S.title) {
+        var signAt = Math.min(last.sungEnd + 1500, S.duration > 0 ? S.duration - 8000 : Infinity);
+        if (t > signAt) {
+          var sz = Math.round(30 * S.scale);
+          var room = Math.max(4, Math.floor((a.h - ss * 2.4 - a.h * 0.12) / (sz * 1.1)));
+          // title on the right, singer + 書 on its left, both standing on the seal
+          var colsText = [Array.from('《' + S.title + '》').slice(0, room)];
+          if (S.artist) colsText.push(Array.from(S.artist + '書').slice(-room));
+          ctx.save();
+          ctx.font = inkFont(sz);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          var n0 = 0;
+          colsText.forEach(function (chars, ci) {
+            var sx = ss * 0.9 + ss / 2 + (colsText.length - 1 - ci) * sz * 1.35 - (colsText.length - 1) * sz * 0.35;
+            var sy = a.h - ss * 2.3 - chars.length * sz * 1.1;
+            chars.forEach(function (ch, i) {
+              if (!ch.trim()) return;
+              var cs = signAt + (n0 + i) * 160;
+              var turned = /[《》]/.test(ch) || !U.hasCJK(ch);
+              kit.write(ch, turned, sx, sy + i * sz * 1.1 + sz * 0.55, cs, cs + 400, sz, 0.95, t);
+            });
+            n0 += chars.length;
+          });
+          ctx.restore();
         }
-        ctx.globalAlpha = alpha * U.outCubic(e);
-        if (e < 1) ctx.filter = 'blur(' + ((1 - e) * size * 0.12).toFixed(1) + 'px)';
-        ctx.fillStyle = ink;
-        if (side) { ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 2); ctx.fillText(ch, 0, 0); ctx.restore(); }
-        else ctx.fillText(ch, x, y);
-        ctx.filter = 'none';
-        ctx.globalAlpha = 1;
       }
 
       var vertical = S.lines.length && U.hasCJK(S.lines.map(function (l) { return l.text; }).join('').slice(0, 200));
@@ -693,7 +973,7 @@
         if (theme.glow) ctx.shadowBlur = size * 0.22;
         var drawCol = function (c, x, alpha) {
           c.chars.forEach(function (ch) {
-            if (ch.ch.trim()) writeChar(ch.ch, ch.side, x, topY + ch.pos, ch.start, size, alpha);
+            if (ch.ch.trim()) writeChar(ch.ch, ch.side, x, topY + ch.pos, ch.start, ch.end, size, alpha);
           });
         };
         if (cur >= 0) {
@@ -780,6 +1060,77 @@
         });
       }
       ctx.restore();
+    },
+  });
+
+  // =====================================================================
+  // 墨染時鐘 — the standby screen: the time written in ink, in vertical Chinese numerals.
+  // Uses 墨染's options (配色、字體、書寫方式). Shown by the engine after a while without music.
+  // =====================================================================
+  var NUM = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  function zhNumber(n) {
+    if (n < 10) return NUM[n];
+    if (n < 20) return '十' + (n % 10 ? NUM[n % 10] : '');
+    return NUM[Math.floor(n / 10)] + '十' + (n % 10 ? NUM[n % 10] : '');
+  }
+  var WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+  F.register('clock', {
+    label: '墨染時鐘', desc: '沒在播歌時，用墨寫出時間', background: 'self', subtitle: 'self', hidden: true,
+    optionsFrom: 'ink',
+    draw: function (ctx, S, U) {
+      var d = new Date();
+      var hour = zhNumber(d.getHours()) + '時';
+      var minute = d.getMinutes() ? zhNumber(d.getMinutes()) + '分' : '整';
+      var date = zhNumber(d.getMonth() + 1) + '月' + zhNumber(d.getDate()) + '日';
+      var week = '星期' + WEEK[d.getDay()];
+      var kit = inkKit(ctx, S, U, '零一二三四五六七八九十時分整月日星期流');
+      var a = U.area(), st = S.store, now = S.now;
+      kit.paper();
+      var theme = kit.theme;
+      // each text keeps the moment it started being written, so a new minute is written afresh
+      st.parts = st.parts || {};
+      function part(key, text) {
+        var p = st.parts[key];
+        if (!p || p.text !== text) {
+          if (p) st.parts[key + ':old'] = { text: p.text, start: p.start, gone: now };
+          p = st.parts[key] = { text: text, start: now + (p ? 300 : 0) };
+        }
+        return p;
+      }
+      var big = Math.round(Math.min(a.h * 0.72 / 5.2, a.w / 6, 120 * S.scale));
+      var small = Math.round(big * 0.4);
+      var longest = Math.max(Array.from(hour).length, Array.from(minute).length);
+      var topY = Math.max(a.h * 0.08, (a.h - longest * big * 1.12) / 2);
+      var colGap = big * 1.5;
+      var x0 = a.w / 2 + colGap * 0.75;
+      ctx.save();
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      if (theme.glow) { ctx.shadowColor = theme.glow; ctx.shadowBlur = big * 0.2; }
+      function column(key, text, x, size, gap) {
+        var p = part(key, text);
+        var old = st.parts[key + ':old'];
+        ctx.font = kit.font(size, false, true);
+        if (old) {
+          var f = 1 - U.smooth((now - old.gone) / 700);
+          if (f <= 0) delete st.parts[key + ':old'];
+          else Array.from(old.text).forEach(function (ch, i) {
+            kit.write(ch, false, x, topY + (i + 0.5) * size * gap, old.start + i * 260, old.start + i * 260 + 700, size, f, now);
+          });
+        }
+        Array.from(p.text).forEach(function (ch, i) {
+          var s0 = p.start + i * 650;
+          kit.write(ch, false, x, topY + (i + 0.5) * size * gap, s0, s0 + 900, size, 1, now);
+        });
+      }
+      column('h', hour, x0, big, 1.12);
+      column('m', minute, x0 - colGap, big, 1.12);
+      ctx.shadowBlur = 0;
+      column('d', date, x0 - colGap * 2 + (big - small) * 0.3, small, 1.25);
+      column('w', week, x0 - colGap * 2 - small * 1.7 + (big - small) * 0.3, small, 1.25);
+      ctx.restore();
+      var ss = 64 * S.scale;
+      kit.seal(a.w - ss * 1.9, a.h - ss * 1.9, ss, '流');
     },
   });
 

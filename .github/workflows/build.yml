@@ -26,7 +26,7 @@ jobs:
   # Folia's web build, shared by the Android app and the Windows app.
   web:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,6 +70,17 @@ jobs:
           npm ci --no-audit --no-fund
           npx vite build
           test -f dist/index.html
+
+      # Pictures of every animation for the settings' picker (thumbs/<id>.jpg inside the bundle).
+      - name: Thumbnails
+        continue-on-error: true
+        timeout-minutes: 12
+        run: |
+          mkdir -p /tmp/thumbs-tool && cd /tmp/thumbs-tool
+          npm init -y >/dev/null && npm install --no-audit --no-fund playwright-core@1.48.2 >/dev/null
+          cp "$GITHUB_WORKSPACE/controller/ci/thumbnails.mjs" .
+          node thumbnails.mjs "$GITHUB_WORKSPACE/folia-src/dist" "$GITHUB_WORKSPACE/controller" "$GITHUB_WORKSPACE/folia-src/dist/thumbs"
+          ls -la "$GITHUB_WORKSPACE/folia-src/dist/thumbs" | head -50
 
       - name: Zip the bundle
         run: |

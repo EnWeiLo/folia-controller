@@ -598,6 +598,38 @@ object MediaHub {
 
     private fun lyricClockMs(): Long = (positionMs() - lyricOffsetMs).coerceAtLeast(0L)
 
+    // ---------- for the floating lyrics ----------
+    private var floatCacheKey: Any? = null
+    private var floatCache: Pair<String, String> = Pair("", "")
+
+    /**
+     * The line being sung and its translation (converted to Traditional like the rest), or null when
+     * there are no lyrics. Used by the floating lyrics window, which has no web page to do this.
+     */
+    fun currentLyricPair(): Pair<String, String>? {
+        val result = lyricResult ?: return null
+        if (noLyricsChosen) return null
+        val doc = result.doc
+        val t = lyricClockMs()
+        val index = doc.lines.indexOfLast { it.startMs <= t }
+        val key = listOf(doc, index, convertToTraditional)
+        if (key == floatCacheKey) return floatCache
+        floatCacheKey = key
+        if (index < 0) {
+            floatCache = Pair("", "")
+            return floatCache
+        }
+        val line = doc.lines[index]
+        val next = doc.lines.getOrNull(index + 1)?.startMs ?: Long.MAX_VALUE
+        val trans = doc.translation.lastOrNull { it.startMs <= t && it.startMs >= line.startMs - 1000 && it.startMs < next }?.text.orEmpty()
+        val convert = convertToTraditional && !LyricFormats.hasKana(doc)
+        floatCache = Pair(
+            if (convert) LyricRepository.toTraditional(line.text) else line.text,
+            if (convertToTraditional) LyricRepository.toTraditional(trans) else trans,
+        )
+        return floatCache
+    }
+
     private fun pushPauseState() {
         val data = JSONObject()
             .put("isPaused", !isPlaying())

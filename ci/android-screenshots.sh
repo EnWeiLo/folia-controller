@@ -54,9 +54,34 @@ sleep 1.5
 shot phone-card-hidden
 
 # The glass dialogs
-launch --ez demo true --ez settings true
-sleep 18
+launch --ez demo true --ez settings true --es settingsTab anim
+sleep 20
 shot phone-settings
+launch --ez demo true --ez settings true --es settingsTab display
+sleep 18
+shot phone-settings-display
+launch --ez demo true --ez settings true --es settingsTab lyrics
+sleep 18
+shot phone-settings-lyrics
+# 墨染時鐘 (the standby screen) and 墨染
+launch --ez demo true --es mode fx:clock
+sleep 16
+adb shell input tap $CX $CY
+sleep 4
+shot phone-clock
+launch --ez demo true --es mode fx:ink
+sleep 20
+adb shell input tap $CX $CY
+sleep 6
+shot phone-ink
+# 懸浮歌詞 over the home screen
+adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow
+launch --ez demo true --ez floating true
+sleep 14
+adb shell input keyevent KEYCODE_HOME
+sleep 5
+shot phone-floating
+adb shell am stopservice -n "$PKG/.FloatingLyricsService" >/dev/null 2>&1 || true
 launch --ez demo true --ez about true
 sleep 18
 shot phone-about

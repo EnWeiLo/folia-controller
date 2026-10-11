@@ -504,12 +504,12 @@
   }
 
   // ---------- settings panel ----------
-  function switchRow(id, label, note) {
-    return '<div class="fc-row"><label for="' + id + '">' + label + (note ? '<small>' + note + '</small>' : '') +
+  function switchRow(id, label, note, ic) {
+    return '<div class="fc-row">' + (ic ? lineIcon(ic) : '') + '<label for="' + id + '">' + label + (note ? '<small>' + note + '</small>' : '') +
       '</label><button class="fc-switch" id="' + id + '" role="switch" aria-checked="false"></button></div>';
   }
-  function selectRow(id, label, options, note) {
-    var html = '<div class="fc-row"><label for="' + id + '">' + label + (note ? '<small>' + note + '</small>' : '') +
+  function selectRow(id, label, options, note, ic) {
+    var html = '<div class="fc-row">' + (ic ? lineIcon(ic) : '') + '<label for="' + id + '">' + label + (note ? '<small>' + note + '</small>' : '') +
       '</label><select id="' + id + '">';
     var group = false;
     for (var i = 0; i < options.length; i++) {
@@ -525,45 +525,118 @@
     return html + '</select></div>';
   }
 
+  // ---------- settings panel: tabs, icons, a picture for every animation ----------
+  var LINE_ICONS = {
+    anim: 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6',
+    display: 'M3 5h18v11H3zM9 20h6M12 16v4',
+    lyrics: 'M4 6h16M4 11h16M4 16h10',
+    sound: 'M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2',
+    more: 'M5 12h.01M12 12h.01M19 12h.01',
+    sliders: 'M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4',
+    sun: 'M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+    gauge: 'M4 16a8 8 0 1 1 16 0M12 16l4-5',
+    clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 7v5l3 2',
+    caption: 'M3 6h18v12H3zM7 14h4M13 14h4M7 10h10',
+    trad: 'M5 6h14M12 3v3M7 9c2 5 6 9 11 11M17 9c-2 5-6 9-11 11',
+    timer: 'M12 8v4l3 2M4 4v5h5M5 9a8 8 0 1 1 1.5 7',
+    wave: 'M2 12c2-5 4-5 6 0s4 5 6 0 4-5 6 0',
+    palette: 'M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5 1-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.4-4-8-9-8zM7.5 11h.01M10 7h.01M15 7h.01',
+    devices: 'M3 5h12v9H3zM17 8h4v11h-4zM6 18h6',
+    keys: 'M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M8 14h8',
+    info: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 11v6M12 7.5h.01',
+  };
+  function lineIcon(name) {
+    return '<svg class="fc-ri" viewBox="0 0 24 24" aria-hidden="true"><path d="' + LINE_ICONS[name] +
+      '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  var TABS = [['anim', '動畫', 'anim'], ['display', '畫面', 'display'], ['lyrics', '歌詞', 'lyrics'], ['sound', '聲音', 'sound'], ['other', '其他', 'more']];
+  function thumbUrl(mode) { return '/thumbs/' + (mode.indexOf('fx:') === 0 ? 'fx-' + mode.slice(3) : mode) + '.jpg'; }
+  function modeGrid() {
+    var html = '', open = false;
+    MODES.forEach(function (m) {
+      if (m[0] === '') {
+        if (open) html += '</div>';
+        html += '<div class="fc-section">' + m[1] + '</div><div class="fc-grid">';
+        open = true;
+        return;
+      }
+      html += '<button class="fc-tile" data-mode="' + m[0] + '" aria-pressed="false"><span class="fc-thumb">' +
+        '<img src="' + thumbUrl(m[0]) + '" alt="" loading="lazy" onerror="this.remove()"></span><span class="fc-tile-name">' + m[1] + '</span></button>';
+    });
+    return html + (open ? '</div>' : '');
+  }
+
   function renderPanel() {
     var offsetOptions = OFFSETS.map(function (ms) {
       return [String(ms), ms === 0 ? '0 ms（不調整）' : (ms > 0 ? '+' + ms + ' ms（歌詞晚一點）' : ms + ' ms（歌詞早一點）')];
     });
     var qualityOptions = QUALITIES.map(function (q) { return [q.id, q.label + '（' + q.detail + '）']; });
+    var fxRows = fxOptionRows();
+    var panes = {
+      anim:
+        (fxRows ? '<div class="fc-section">特效選項・' + (window.Flowrics.options().label || '') + '（立即套用）</div>' + fxRows : '') +
+        (isFx ? '' : '<div class="fc-row">' + lineIcon('sliders') + '<label>動畫與外觀細節<small id="fc-tuning-note">每種動畫的細部設定、字型、副歌詞區、背景</small></label>' +
+          '<button class="fc-text-btn" id="fc-tuning-open">調整…</button></div>') +
+        modeGrid(),
+      display:
+        (qualityApplies ? selectRow('fc-quality', '畫質', qualityOptions, '越低越流暢，歌詞文字依然清晰', 'gauge') : '') +
+        switchRow('fc-standby', '待機時鐘', '沒在播歌 30 秒後，用墨染寫出時間；一播歌就回到歌詞', 'clock') +
+        (isFx ? '' : switchRow('fc-daylight', '日間主題', 'Folia 動畫的淺色版本', 'sun')) +
+        switchRow('fc-fps-toggle', '顯示 FPS', '左上角顯示每秒畫出幾幀', 'sliders'),
+      lyrics:
+        selectRow('fc-subtitle', '副歌詞', SUBTITLES, '歌詞下方那一行：翻譯或羅馬拼音', 'caption') +
+        switchRow('fc-traditional', '簡體歌詞轉繁體', '所有裝置共用；日文歌詞不會轉換', 'trad') +
+        selectRow('fc-offset', '歌詞時間偏移', offsetOptions, '所有裝置共用；戴藍牙耳機時歌詞偏早，可以調成 +250～+500', 'timer') +
+        '<div class="fc-keys">換歌詞：資訊卡上的歌詞按鈕，或按 L。選過的歌詞會記住。</div>',
+      sound:
+        switchRow('fc-audio', '跟著音樂律動', '所有裝置共用。擷取這台電腦正在播放的聲音，讓有律動效果的動畫跟著節奏動；不錄音、不上傳', 'wave'),
+      other:
+        '<div class="fc-section">' + '其他裝置' + '</div>' +
+        '<div class="fc-row fc-row-top">' + lineIcon('devices') + '<div class="fc-note" id="fc-lan"></div></div>' +
+        '<div class="fc-section">快捷鍵</div>' +
+        '<div class="fc-row fc-row-top">' + lineIcon('keys') + '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · L 換歌詞' + (webview ? ' · D 桌面歌詞' : '') + ' · F 或雙擊 全螢幕 · 點一下歌詞 收起／打開資訊卡 · Esc 離開</div></div>' +
+        '<div class="fc-section">關於</div>' +
+        '<div class="fc-about"><div class="fc-logo" aria-hidden="true">' + LOGO_SVG + '</div><div><b>流詞 Flowrics</b>' +
+          '<small id="fc-version"></small><small>在任何播放器播歌時，顯示會動的歌詞。</small></div></div>' +
+        '<div class="fc-keys">「Folia 動畫」來自 Folia（github.com/chthollyphile/folia-major），以 AGPL-3.0 授權。' +
+          '流詞含有 Folia，同樣依 AGPL-3.0 提供原始碼：github.com/EnWeiLo/folia-controller。' +
+          '墨染的筆順資料來自 Make Me a Hanzi／Hanzi Writer（Arphic Public License）與 KanjiVG（CC BY-SA 3.0）。歌詞與音樂的版權屬於各權利人。</div>',
+    };
+    var tab = store.get('tab', 'anim');
+    if (!panes[tab]) tab = 'anim';
     var panel = $('fc-panel');
     panel.innerHTML =
       '<div class="fc-panel-head"><h2>設定</h2><button class="fc-btn fc-small" id="fc-close" aria-label="關閉">' + icon('close') + '</button></div>' +
-      '<div class="fc-section">這台裝置的畫面</div>' +
-      selectRow('fc-mode', '歌詞動畫', MODES) +
-      fxOptionRows() +
-      (isFx ? '' : '<div class="fc-row"><label>動畫與外觀細節<small id="fc-tuning-note">每種動畫的細部設定、字型、副歌詞區、背景</small></label>' +
-        '<button class="fc-text-btn" id="fc-tuning-open">調整…</button></div>') +
-      (qualityApplies ? selectRow('fc-quality', '畫質', qualityOptions, '越低越流暢，歌詞文字依然清晰') : '') +
-      (isFx ? '' : switchRow('fc-daylight', '日間主題')) +
-      switchRow('fc-fps-toggle', '顯示 FPS', '左上角顯示每秒畫出幾幀') +
-      selectRow('fc-subtitle', '副歌詞', SUBTITLES, '歌詞下方那一行：翻譯或羅馬拼音') +
-      '<div class="fc-section">音樂律動（所有裝置共用）</div>' +
-      switchRow('fc-audio', '跟著音樂律動', '擷取這台電腦正在播放的聲音，讓有律動效果的動畫跟著節奏動；不錄音、不上傳') +
-      '<div class="fc-section">歌詞（所有裝置共用）</div>' +
-      switchRow('fc-traditional', '簡體歌詞轉繁體', '日文歌詞不會轉換') +
-      selectRow('fc-offset', '歌詞時間偏移', offsetOptions, '戴藍牙耳機時歌詞偏早，可以調成 +250～+500') +
-      '<div class="fc-section">其他裝置</div>' +
-      '<div class="fc-note" id="fc-lan"></div>' +
-      '<div class="fc-section">快捷鍵</div>' +
-      '<div class="fc-keys">空白鍵 播放／暫停 · ← → 倒轉／快轉 5 秒 · N 下一首 · P 上一首 · L 換歌詞' + (webview ? ' · D 桌面歌詞' : '') + ' · F 或雙擊 全螢幕 · 點一下歌詞 收起／打開資訊卡 · Esc 離開</div>' +
-      '<div class="fc-section">關於</div>' +
-      '<div class="fc-about"><div class="fc-logo" aria-hidden="true">' + LOGO_SVG + '</div><div><b>流詞 Flowrics</b>' +
-        '<small id="fc-version"></small><small>在任何播放器播歌時，顯示會動的歌詞。</small></div></div>' +
-      '<div class="fc-keys">「Folia 動畫」來自 Folia（github.com/chthollyphile/folia-major），以 AGPL-3.0 授權。' +
-        '流詞含有 Folia，同樣依 AGPL-3.0 提供原始碼：github.com/EnWeiLo/folia-controller。歌詞與音樂的版權屬於各權利人。</div>';
+      '<div class="fc-tabs" role="tablist">' + TABS.map(function (t) {
+        return '<button class="fc-tab" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === tab) + '">' + lineIcon(t[2]) + '<span>' + t[1] + '</span></button>';
+      }).join('') + '</div>' +
+      TABS.map(function (t) {
+        return '<div class="fc-pane" data-pane="' + t[0] + '"' + (t[0] === tab ? '' : ' hidden') + '>' + panes[t[0]] + '</div>';
+      }).join('');
 
+    [].forEach.call(panel.querySelectorAll('.fc-tab'), function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute('data-tab');
+        store.set('tab', id);
+        [].forEach.call(panel.querySelectorAll('.fc-tab'), function (x) { x.setAttribute('aria-selected', String(x === b)); });
+        [].forEach.call(panel.querySelectorAll('.fc-pane'), function (p) { p.hidden = p.getAttribute('data-pane') !== id; });
+        panel.scrollTop = 0;
+      };
+    });
+    [].forEach.call(panel.querySelectorAll('.fc-tile'), function (b) {
+      b.onclick = function () {
+        var mode = b.getAttribute('data-mode');
+        if (mode === store.get('mode', DEFAULT_MODE) && !(isFx && new URL(location.href).searchParams.get('fx') === 'clock')) return;
+        store.set('mode', mode);
+        reloadWithSettings();
+      };
+    });
     $('fc-close').onclick = function () { openPanel(false); };
     if (!isFx) $('fc-tuning-open').onclick = openTuning;
     fxOptionList().forEach(function (o) {
       // Flowrics' effect options apply at once (the effect redraws), and are kept per device.
-      $('fc-fxopt-' + o.id).onchange = function () { window.Flowrics.setOption(o.id, this.value); };
+      $('fc-fxopt-' + o.id).onchange = function () { window.Flowrics.setOption(o.id, this.value); renderPanel(); syncPanel(); };
     });
-    $('fc-mode').onchange = function () { store.set('mode', this.value); reloadWithSettings(); };
     if (qualityApplies) {
       $('fc-quality').onchange = function () {
         var before = qualityId();
@@ -574,6 +647,12 @@
         else reloadWithSettings();
       };
     }
+    $('fc-standby').onclick = function () {
+      store.set('standby', !standbyOn());
+      if (window.Flowrics && window.Flowrics.S) window.Flowrics.S.standbyEnabled = standbyOn();
+      syncPanel();
+      checkStandby();
+    };
     if (!isFx) $('fc-daylight').onclick = function () { store.set('daylight', !store.get('daylight', false)); reloadWithSettings(); };
     $('fc-fps-toggle').onclick = function () {
       var on = !store.get('fps', false);
@@ -587,6 +666,30 @@
     $('fc-offset').onchange = function () { post('/api/settings', { offsetMs: Number(this.value) }); };
   }
 
+  // ---------- 待機時鐘 ----------
+  // Folia's pages switch to the clock page after 30 s without music and back when it plays;
+  // Flowrics' own pages show the clock by themselves (the engine).
+  var pageParams = new URL(location.href).searchParams;
+  var onStandbyPage = isFx && pageParams.get('fx') === 'clock' && pageParams.get('standby') === '1';
+  var idleSince = 0;
+  function standbyOn() { return store.get('standby', true) !== false; }
+  function checkStandby() {
+    if (!state.connected) return;
+    var idle = !state.playing;
+    if (onStandbyPage) {
+      if (!idle || !standbyOn()) location.replace('/');
+      return;
+    }
+    if (isFx) return;
+    if (!idle) { idleSince = 0; return; }
+    if (!idleSince) idleSince = Date.now();
+    if (standbyOn() && Date.now() - idleSince > 30000 && !panelOpen && !pickerOpen && !tuningOpen()) {
+      location.replace('/fx.html?fx=clock&standby=1&host=' + encodeURIComponent(location.host) + '&cfg=' +
+        encodeURIComponent(JSON.stringify({ subtitleContentMode: store.get('subtitle', 'translation'), standby: true })));
+    }
+  }
+  setInterval(checkStandby, 5000);
+
   function setSwitch(id, on) {
     var el = $(id);
     if (el) el.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -599,15 +702,22 @@
   }
   function fxOptionRows() {
     return fxOptionList().map(function (o) {
+      var cur = o.choices.filter(function (c) { return c[0] === o.value; })[0];
+      var note = cur && /（(.*)）$/.exec(cur[1]);
       return selectRow('fc-fxopt-' + o.id, o.label, o.choices.map(function (c) {
         return [c[0], c[1].replace(/（.*）$/, '')];
-      }), o.choices.map(function (c) { return /（(.*)）$/.exec(c[1]); }).some(Boolean) ? '特效選項，立即套用' : '');
+      }), note ? note[1] : '', FX_OPTION_ICONS[o.id] || 'palette');
     }).join('');
   }
 
+  var FX_OPTION_ICONS = { layout: 'lyrics', write: 'anim', theme: 'palette', zhFont: 'trad', jaFont: 'trad', splash: 'wave', sign: 'info' };
   function syncPanel() {
     fxOptionList().forEach(function (o) { var el = $('fc-fxopt-' + o.id); if (el) el.value = o.value; });
-    $('fc-mode').value = store.get('mode', DEFAULT_MODE);
+    var mode = store.get('mode', DEFAULT_MODE);
+    [].forEach.call(document.querySelectorAll('#fc-panel .fc-tile'), function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-mode') === mode));
+    });
+    setSwitch('fc-standby', standbyOn());
     var changed = window.FcTuning ? window.FcTuning.changedCount() : 0;
     if (!isFx) $('fc-tuning-note').textContent = changed ? '已調整 ' + changed + ' 項（每種動畫的細部設定、字型、副歌詞區、背景）' : '每種動畫的細部設定、字型、副歌詞區、背景';
     if (qualityApplies) $('fc-quality').value = qualityId();
@@ -797,6 +907,7 @@
       if (d.lan) state.lan = d.lan;
       state.receivedAt = performance.now();
       render();
+      checkStandby();
     };
     socket.onclose = function () {
       socket = null;

@@ -20,6 +20,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.TextUtils
 import android.util.TypedValue
@@ -98,6 +99,7 @@ class MainActivity : Activity() {
         private val OFFSETS = longArrayOf(-1000, -500, -250, 0, 250, 500, 750, 1000, 1500)
         private const val REQUEST_LYRICS_FOLDER = 41
         private const val REQUEST_AUDIO = 42
+        private const val REQUEST_NOTIFY = 43
     }
 
     private lateinit var prefs: SharedPreferences
@@ -181,7 +183,11 @@ class MainActivity : Activity() {
             // CI screenshots of the 動畫與外觀 panel.
             if (intent.getBooleanExtra("tuning", false)) handler.postDelayed({ openTuning() }, 18000)
             // CI screenshots of the glass dialogs.
-            if (intent.getBooleanExtra("settings", false)) handler.postDelayed({ showSettings() }, 14000)
+            if (intent.getBooleanExtra("settings", false)) {
+                intent.getStringExtra("settingsTab")?.let { prefs.edit().putString("settings_tab", it).apply() }
+                handler.postDelayed({ showSettings() }, 14000)
+            }
+            if (intent.getBooleanExtra("floating", false)) handler.postDelayed({ setFloating(true) }, 4000)
             if (intent.getBooleanExtra("about", false)) handler.postDelayed({ showAbout() }, 14000)
         }
         loadFolia()
@@ -214,10 +220,16 @@ class MainActivity : Activity() {
         updatePermissionState()
         handler.post(progressTicker)
         startAudioIfWanted()
+        FloatingLyricsService.appInFront = true
+        resumeFloating()
+        handler.removeCallbacks(standbyTicker)
+        handler.post(standbyTicker)
     }
 
     override fun onPause() {
         resumed = false
+        FloatingLyricsService.appInFront = false
+        handler.removeCallbacks(standbyTicker)
         audio.stop()
         handler.removeCallbacks(progressTicker)
         (getSystemService(DISPLAY_SERVICE) as DisplayManager).unregisterDisplayListener(displayListener)
@@ -229,7 +241,8 @@ class MainActivity : Activity() {
         handler.removeCallbacksAndMessages(null)
         MediaHub.webSink = null
         MediaHub.uiListener = null
-        if (isFinishing) MediaHub.stop()
+        // The floating lyrics keep reading the player after the app closes.
+        if (isFinishing && !FloatingLyricsService.running) MediaHub.stop()
         webView.destroy()
         super.onDestroy()
     }
@@ -667,6 +680,7 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQUEST_AUDIO) return
+        refreshSettings()
         if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             prefs.edit().putBoolean("audio_reactive", true).apply()
             startAudioIfWanted()
@@ -808,6 +822,7 @@ class MainActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         when {
+            settingsRoot != null -> closeSettings()
             tutorial != null -> hideGestureTutorial(remember = true)
             tuningOpen -> webView.evaluateJavascript("window.FcTuning&&FcTuning.close()", null)
             else -> super.onBackPressed()
@@ -859,15 +874,15 @@ class MainActivity : Activity() {
     // ---------- behaviour ----------
 
     private fun loadFolia() {
+        standbyShown = false
         // The card's see-through level follows the quality (no blur behind it in 流暢).
         appliedPalette = null
         if (::card.isInitialized) applyCardLook()
         // CI screenshots pick an effect for one run without touching the saved setting.
-        val demoMode = if (MediaHub.demo) intent.getStringExtra("mode") else null
-        val mode = demoMode ?: prefs.getString("mode", DEFAULT_MODE) ?: DEFAULT_MODE
+        val mode = currentMode()
         if (mode.startsWith("fx:")) {
-            // Flowrics' own effect page; it reads the same feed and the 副歌詞 setting.
-            val cfg = JSONObject().put("subtitleContentMode", subtitleMode())
+            // Flowrics' own effect page; it reads the same feed, the 副歌詞 and 待機時鐘 settings.
+            val cfg = JSONObject().put("subtitleContentMode", subtitleMode()).put("standby", prefs.getBoolean("standby", true))
             webView.loadUrl(
                 FoliaAssetServer.ORIGIN + "/fx.html?fx=" + Uri.encode(mode.removePrefix("fx:")) +
                     "&host=android-bridge&cfg=" + Uri.encode(cfg.toString()),
@@ -1022,6 +1037,12 @@ class MainActivity : Activity() {
 
     /** Dialogs as frosted glass: blurs what's behind them on Android 12+. */
     private fun glassDialog() = object : AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert) {
+        override fun setOnDismissListener(listener: android.content.DialogInterface.OnDismissListener?): AlertDialog.Builder =
+            super.setOnDismissListener { d ->
+                listener?.onDismiss(d)
+                refreshSettings()
+            }
+
         override fun create(): AlertDialog {
             val dialog = super.create()
             dialog.window?.let { window ->
@@ -1090,9 +1111,8 @@ class MainActivity : Activity() {
                 dialog.dismiss()
                 webView.evaluateJavascript(
                     "Flowrics.setOption(${JSONObject.quote(option.getString("id"))},${JSONObject.quote(values[which])})",
-                ) { showFxOptions() }
+                ) { refreshSettings() }
             }
-            .setNegativeButton("返回") { _, _ -> showFxOptions() }
             .setOnDismissListener { enterImmersive() }
             .show()
     }
@@ -1348,51 +1368,497 @@ class MainActivity : Activity() {
 
     private fun onOff(key: String, default: Boolean) = if (prefs.getBoolean(key, default)) "開" else "關"
 
+    // ---------- settings: a glass sheet with tabs ----------
+
+    private data class SettingsTab(val id: String, val label: String, val icon: Int)
+    private val settingsTabs = listOf(
+        SettingsTab("anim", "動畫", R.drawable.ic_set_anim),
+        SettingsTab("display", "畫面", R.drawable.ic_set_display),
+        SettingsTab("lyrics", "歌詞", R.drawable.ic_set_lyrics),
+        SettingsTab("sound", "聲音", R.drawable.ic_set_sound),
+        SettingsTab("other", "其他", R.drawable.ic_set_more),
+    )
+    private var settingsRoot: FrameLayout? = null
+    private var settingsSheet: LinearLayout? = null
+    private var settingsBody: LinearLayout? = null
+    private var settingsScroll: ScrollView? = null
+    private var settingsTabBar: LinearLayout? = null
+    private var settingsTab = "anim"
+    private val thumbCache = HashMap<String, Bitmap?>()
+
+    private fun refreshSettings() {
+        if (settingsRoot != null) renderSettings()
+    }
+
     private fun showSettings() {
-        val mode = prefs.getString("mode", DEFAULT_MODE)
-        val modeLabel = modeLabel(mode)
-        val isFx = mode?.startsWith("fx:") == true
-        val offset = prefs.getLong("offset", 0L)
-        val items = arrayOf(
-            "歌詞動畫：$modeLabel",
-            "畫質：${currentQuality().label}",
-            "刷新率：${refreshLabel()}",
-            "顯示 FPS：${onOff("show_fps", false)}",
-            "日間主題：${onOff("daylight", false)}",
-            "副歌詞：${SUBTITLES.firstOrNull { it.first == subtitleMode() }?.second ?: "中文翻譯"}",
-            "簡體歌詞轉繁體：${onOff("traditional", true)}",
-            "歌詞時間偏移：${if (offset > 0) "+" else ""}${offset} ms",
-            "保持螢幕常亮：${onOff("keep_screen_on", true)}",
-            "本機歌詞資料夾：${LocalLyrics.folderLabel ?: "未設定"}",
-            if (isFx) "特效選項（排版、配色…）" else "動畫與外觀細節（字型、背景、各動畫細部設定）",
-            "跟著音樂律動：${onOff("audio_reactive", false)}",
-            "手勢說明",
-            "重新載入畫面",
-            "關於流詞",
-        )
-        glassDialog()
-            .setTitle("設定")
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> pickMode()
-                    1 -> pickQuality()
-                    2 -> pickRefreshRate()
-                    3 -> { toggle("show_fps", false); loadFolia(); showSettings() }
-                    4 -> { toggle("daylight", false); loadFolia(); showSettings() }
-                    5 -> pickSubtitle()
-                    6 -> { toggle("traditional", true); applyHubPrefs(); showSettings() }
-                    7 -> pickOffset()
-                    8 -> { toggle("keep_screen_on", true); applyKeepScreenOn(); showSettings() }
-                    9 -> pickLyricsFolder()
-                    10 -> if (isFx) showFxOptions() else openTuning()
-                    11 -> toggleAudio()
-                    12 -> showGestureTutorial()
-                    13 -> loadFolia()
-                    14 -> showAbout()
+        if (settingsRoot != null) {
+            renderSettings()
+            return
+        }
+        settingsTab = prefs.getString("settings_tab", "anim") ?: "anim"
+        val root = FrameLayout(this).apply {
+            elevation = dpf(30f)
+            setBackgroundColor(0x59000000)
+            isClickable = true
+            setOnClickListener { closeSettings() }
+        }
+        val metrics = resources.displayMetrics
+        val w = (metrics.widthPixels - dp(24)).coerceAtMost(dp(600))
+        val h = (metrics.heightPixels * 0.88f).toInt().coerceAtMost(dp(820))
+        val sheet = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            isClickable = true
+            background = glassBackground(dpf(28f), 0x1C1C22, if (glassBlurOn()) 0x99 else 0xF2)
+            setPadding(0, dp(6), 0, dp(6))
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            clipToOutline = true
+        }
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(22), dp(10), dp(10), dp(6))
+            addView(label(20f, Color.WHITE, bold = true).apply { text = "設定" }, LinearLayout.LayoutParams(0, WRAP, 1f))
+            addView(iconButton(R.drawable.ic_set_close, 40, 20, "關閉") { closeSettings() })
+        }
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = GradientDrawable().apply {
+                cornerRadius = dpf(999f)
+                setColor(0x40000000)
+                setStroke(dp(1), 0x1FFFFFFF)
+            }
+        }
+        settingsTabs.forEach { tab ->
+            tabs.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(0, dp(6), 0, dp(5))
+                tag = tab.id
+                addView(ImageView(context).apply { setImageResource(tab.icon) }, LinearLayout.LayoutParams(dp(20), dp(20)))
+                addView(label(11.5f, Color.WHITE).apply { text = tab.label; gravity = Gravity.CENTER; setPadding(0, dp(3), 0, 0) })
+                setOnClickListener {
+                    settingsTab = tab.id
+                    settingsScroll?.scrollTo(0, 0)
+                    renderSettings()
+                }
+            }, LinearLayout.LayoutParams(0, WRAP, 1f))
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(4), 0, dp(16))
+        }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(body, FrameLayout.LayoutParams(MATCH, WRAP))
+        }
+        sheet.addView(head, LinearLayout.LayoutParams(MATCH, WRAP))
+        sheet.addView(tabs, LinearLayout.LayoutParams(MATCH, WRAP).apply { marginStart = dp(14); marginEnd = dp(14); bottomMargin = dp(6) })
+        sheet.addView(scroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        root.addView(sheet, FrameLayout.LayoutParams(w, h, Gravity.CENTER))
+        rootLayout.addView(root, FrameLayout.LayoutParams(MATCH, MATCH))
+        settingsRoot = root
+        settingsSheet = sheet
+        settingsBody = body
+        settingsScroll = scroll
+        settingsTabBar = tabs
+        root.alpha = 0f
+        root.animate().alpha(1f).setDuration(180).start()
+        sheet.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateSheetGlass(true) }
+        renderSettings()
+    }
+
+    private fun closeSettings() {
+        val root = settingsRoot ?: return
+        prefs.edit().putString("settings_tab", settingsTab).apply()
+        updateSheetGlass(false)
+        settingsRoot = null
+        settingsSheet = null
+        settingsBody = null
+        settingsScroll = null
+        settingsTabBar = null
+        root.animate().alpha(0f).setDuration(160).withEndAction { rootLayout.removeView(root) }.start()
+        thumbCache.clear()
+        enterImmersive()
+    }
+
+    /** The page blurs what's behind the sheet, like it does for the info card. */
+    private fun updateSheetGlass(on: Boolean) {
+        val sheet = settingsSheet
+        val scale = currentQuality().renderScale
+        val js = if (on && sheet != null && glassBlurOn() && sheet.width > 0) {
+            String.format(
+                Locale.US, "{id:'sheet',on:true,x:%.1f,y:%.1f,w:%.1f,h:%.1f,r:%.1f,blur:%.1f}",
+                sheet.left * scale, sheet.top * scale, sheet.width * scale, sheet.height * scale,
+                dpf(28f) * scale, dpf(30f) * scale,
+            )
+        } else "{id:'sheet',on:false}"
+        webView.evaluateJavascript("window.__fcSetGlass&&window.__fcSetGlass($js)", null)
+    }
+
+    private fun renderSettings() {
+        val body = settingsBody ?: return
+        settingsTabBar?.let { bar ->
+            for (i in 0 until bar.childCount) {
+                val child = bar.getChildAt(i)
+                val on = child.tag == settingsTab
+                child.background = if (on) GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x40FFFFFF, 0x18FFFFFF),
+                ).apply { cornerRadius = dpf(999f); setStroke(dp(1), 0x33FFFFFF) } else null
+                child.alpha = if (on) 1f else 0.6f
+            }
+        }
+        body.removeAllViews()
+        val mode = currentMode()
+        val isFx = mode.startsWith("fx:")
+        when (settingsTab) {
+            "anim" -> {
+                if (isFx) {
+                    val holder = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                    body.addView(holder)
+                    fillFxOptions(holder)
+                } else {
+                    body.addView(settingRow(R.drawable.ic_set_sliders, "動畫與外觀細節", null, "每種動畫的細部設定、字型、副歌詞區、背景") {
+                        closeSettings()
+                        openTuning()
+                    })
+                }
+                listOf(
+                    Triple("Folia 動畫", MODES, "Folia 內建的歌詞動畫"),
+                    Triple("流詞特效", FX_MODES, "流詞自己做的動態歌詞"),
+                    Triple("誇張特效", WILD_MODES, "好玩為主"),
+                ).forEach { (title, list, _) ->
+                    body.addView(sectionLabel(title))
+                    body.addView(modeGrid(list, mode))
                 }
             }
-            .setOnDismissListener { enterImmersive() }
-            .show()
+            "display" -> {
+                body.addView(settingRow(R.drawable.ic_set_gauge, "畫質", currentQuality().label, currentQuality().detail) { pickQuality() })
+                body.addView(settingRow(R.drawable.ic_set_rate, "刷新率", refreshLabel(), null) { pickRefreshRate() })
+                body.addView(switchRow(R.drawable.ic_set_screen, "保持螢幕常亮", "播歌時螢幕不會自動關掉", prefs.getBoolean("keep_screen_on", true)) {
+                    toggle("keep_screen_on", true)
+                    applyKeepScreenOn()
+                })
+                body.addView(switchRow(R.drawable.ic_set_clock, "待機時鐘", "沒在播歌 30 秒後，用墨染寫出時間；一播歌就回到歌詞", prefs.getBoolean("standby", true)) {
+                    toggle("standby", true)
+                    val on = prefs.getBoolean("standby", true)
+                    webView.evaluateJavascript("window.Flowrics&&Flowrics.S&&(Flowrics.S.standbyEnabled=$on)", null)
+                    checkStandby()
+                })
+                if (!isFx) {
+                    body.addView(switchRow(R.drawable.ic_set_sun, "日間主題", "Folia 動畫的淺色版本", prefs.getBoolean("daylight", false)) {
+                        toggle("daylight", false)
+                        loadFolia()
+                    })
+                }
+                body.addView(switchRow(R.drawable.ic_set_sliders, "顯示 FPS", "左上角顯示每秒畫出幾幀", prefs.getBoolean("show_fps", false)) {
+                    toggle("show_fps", false)
+                    loadFolia()
+                })
+            }
+            "lyrics" -> {
+                val offset = prefs.getLong("offset", 0L)
+                body.addView(settingRow(R.drawable.ic_set_caption, "副歌詞", SUBTITLES.firstOrNull { it.first == subtitleMode() }?.second ?: "中文翻譯", "歌詞下方那一行") { pickSubtitle() })
+                body.addView(switchRow(R.drawable.ic_set_trad, "簡體歌詞轉繁體", "日文歌詞不會轉換", prefs.getBoolean("traditional", true)) {
+                    toggle("traditional", true)
+                    applyHubPrefs()
+                })
+                body.addView(settingRow(R.drawable.ic_set_timer, "歌詞時間偏移", "${if (offset > 0) "+" else ""}$offset ms", "戴藍牙耳機時歌詞偏早，可以調成 +250～+500") { pickOffset() })
+                body.addView(settingRow(R.drawable.ic_set_music, "換歌詞", MediaHub.lyricStatus.ifBlank { null }, "從所有來源挑一份，選過的會記住") {
+                    closeSettings()
+                    showLyricPicker()
+                })
+                body.addView(settingRow(R.drawable.ic_set_folder, "本機歌詞資料夾", LocalLyrics.folderLabel ?: "未設定", null) { pickLyricsFolder() })
+                body.addView(sectionLabel("懸浮歌詞"))
+                body.addView(switchRow(R.drawable.ic_set_float, "懸浮歌詞", "在其他 App 上方顯示兩行歌詞（歌詞＋翻譯）", prefs.getBoolean("floating_lyrics", false)) {
+                    setFloating(!prefs.getBoolean("floating_lyrics", false))
+                })
+                body.addView(switchRow(R.drawable.ic_set_lock, "鎖定懸浮歌詞", "鎖定後手指會穿過歌詞；也可以從通知切換", prefs.getBoolean("float_locked", false)) {
+                    if (FloatingLyricsService.running) {
+                        startService(Intent(this, FloatingLyricsService::class.java).setAction(FloatingLyricsService.ACTION_LOCK))
+                        handler.postDelayed({ refreshSettings() }, 150)
+                    } else {
+                        toggle("float_locked", false)
+                    }
+                })
+            }
+            "sound" -> {
+                body.addView(switchRow(R.drawable.ic_set_wave, "跟著音樂律動", "讀取正在播放的聲音頻譜，讓有律動效果的動畫跟著節奏動；不錄音、不上傳", prefs.getBoolean("audio_reactive", false)) {
+                    toggleAudio()
+                })
+            }
+            else -> {
+                body.addView(settingRow(R.drawable.ic_set_gesture, "手勢說明", null, null) {
+                    closeSettings()
+                    showGestureTutorial()
+                })
+                body.addView(settingRow(R.drawable.ic_set_reload, "重新載入畫面", null, null) { loadFolia() })
+                body.addView(settingRow(R.drawable.ic_set_info, "關於流詞", null, null) { showAbout() })
+            }
+        }
+    }
+
+    private fun sectionLabel(text: String) = label(12.5f, 0x8CFFFFFF.toInt()).apply {
+        this.text = text
+        setPadding(dp(22), dp(16), dp(22), dp(6))
+    }
+
+    private fun rowShell(icon: Int, title: String, desc: String?): Pair<LinearLayout, LinearLayout> {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(56)
+            setPadding(dp(20), dp(10), dp(14), dp(10))
+            isClickable = true
+            foreground = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x22FFFFFF), null, android.graphics.drawable.ColorDrawable(Color.WHITE),
+            )
+        }
+        row.addView(ImageView(this).apply {
+            setImageResource(icon)
+            alpha = 0.8f
+        }, LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(16) })
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(label(15.5f, Color.WHITE).apply { text = title; maxLines = 2 })
+        if (!desc.isNullOrBlank()) {
+            texts.addView(label(12f, 0x8CFFFFFF.toInt()).apply {
+                text = desc
+                maxLines = 3
+                ellipsize = null
+                setPadding(0, dp(3), 0, 0)
+            })
+        }
+        row.addView(texts, LinearLayout.LayoutParams(0, WRAP, 1f))
+        return Pair(row, texts)
+    }
+
+    private fun settingRow(icon: Int, title: String, value: String?, desc: String?, onClick: () -> Unit): View {
+        val (row, _) = rowShell(icon, title, desc)
+        if (!value.isNullOrBlank()) {
+            row.addView(label(13.5f, 0xB3FFFFFF.toInt()).apply {
+                text = value
+                gravity = Gravity.END
+                maxWidth = dp(170)
+            }, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = dp(10) })
+        }
+        row.addView(ImageView(this).apply { setImageResource(R.drawable.ic_set_chevron); alpha = 0.4f },
+            LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginStart = dp(4) })
+        row.setOnClickListener { onClick() }
+        return row
+    }
+
+    private fun switchRow(icon: Int, title: String, desc: String?, checked: Boolean, onToggle: () -> Unit): View {
+        val (row, _) = rowShell(icon, title, desc)
+        val sw = android.widget.Switch(this).apply {
+            isChecked = checked
+            isClickable = false
+            isFocusable = false
+            val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+            thumbTintList = android.content.res.ColorStateList(states, intArrayOf(Color.WHITE, 0xFFE4E4E7.toInt()))
+            trackTintList = android.content.res.ColorStateList(states, intArrayOf(0xFF34C759.toInt(), 0x66FFFFFF))
+        }
+        row.addView(sw, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = dp(10) })
+        row.setOnClickListener {
+            sw.isChecked = !sw.isChecked
+            onToggle()
+            handler.postDelayed({ refreshSettings() }, 250)
+        }
+        return row
+    }
+
+    private fun thumbFile(id: String) = "folia/thumbs/" + (if (id.startsWith("fx:")) "fx-" + id.removePrefix("fx:") else id) + ".jpg"
+
+    /** A grid of pictures, one per animation; tapping one switches to it (the sheet stays open). */
+    private fun modeGrid(list: List<Mode>, current: String): View {
+        val sheetW = settingsSheet?.layoutParams?.width ?: (resources.displayMetrics.widthPixels - dp(24))
+        val inner = sheetW - dp(36)
+        val columns = (inner / dp(128)).coerceIn(2, 5)
+        val gap = dp(10)
+        val tileW = (inner - gap * (columns - 1)) / columns
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(2), dp(18), dp(8))
+        }
+        var row: LinearLayout? = null
+        list.forEachIndexed { i, m ->
+            if (i % columns == 0) {
+                row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                grid.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { if (i > 0) topMargin = gap })
+            }
+            val selected = m.id == current
+            val image = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR, intArrayOf(0x806E64C8.toInt(), 0x99282838.toInt()),
+                )
+                outlineProvider = object : ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, dpf(12f))
+                    }
+                }
+                clipToOutline = true
+                if (selected) foreground = GradientDrawable().apply {
+                    cornerRadius = dpf(12f)
+                    setColor(Color.TRANSPARENT)
+                    setStroke(dp(3), Color.WHITE)
+                }
+            }
+            loadThumb(m.id, image)
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                isClickable = true
+                addView(image, LinearLayout.LayoutParams(tileW, tileW * 9 / 16))
+                addView(label(13f, if (selected) Color.WHITE else 0xB3FFFFFF.toInt(), bold = selected).apply {
+                    text = m.label
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(5), 0, 0)
+                }, LinearLayout.LayoutParams(tileW, WRAP))
+                contentDescription = m.label
+                setOnClickListener {
+                    if (m.id != currentMode()) {
+                        prefs.edit().putString("mode", m.id).apply()
+                        loadFolia()
+                    }
+                    renderSettings()
+                }
+            }
+            row?.addView(tile, LinearLayout.LayoutParams(tileW, WRAP).apply { if (i % columns > 0) marginStart = gap })
+        }
+        return grid
+    }
+
+    private fun loadThumb(id: String, view: ImageView) {
+        if (thumbCache.containsKey(id)) {
+            thumbCache[id]?.let { view.setImageBitmap(it) }
+            return
+        }
+        val path = thumbFile(id)
+        Thread {
+            val bitmap = try {
+                assets.open(path).use {
+                    android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 })
+                }
+            } catch (e: Exception) {
+                null
+            }
+            handler.post {
+                if (settingsRoot == null) return@post
+                thumbCache[id] = bitmap
+                if (bitmap != null) view.setImageBitmap(bitmap)
+            }
+        }.start()
+    }
+
+    /** The effect's own options (墨染's 排版、配色、字體…), read from the page. */
+    private fun fillFxOptions(holder: LinearLayout) {
+        webView.evaluateJavascript("JSON.stringify(window.Flowrics&&Flowrics.options&&Flowrics.options())") { raw ->
+            if (settingsRoot == null) return@evaluateJavascript
+            val info = try {
+                val text = org.json.JSONArray("[$raw]").optString(0, "null")
+                if (text == "null") null else JSONObject(text)
+            } catch (e: Exception) {
+                null
+            }
+            if (info == null) return@evaluateJavascript
+            holder.addView(sectionLabel("特效選項・" + info.optString("label")))
+            val options = info.getJSONArray("options")
+            for (i in 0 until options.length()) {
+                val o = options.getJSONObject(i)
+                val choices = o.getJSONArray("choices")
+                val current = (0 until choices.length()).map { choices.getJSONArray(it) }
+                    .firstOrNull { it.getString(0) == o.optString("value") }?.getString(1).orEmpty()
+                val icon = when (o.optString("id")) {
+                    "layout" -> R.drawable.ic_set_lyrics
+                    "write" -> R.drawable.ic_set_anim
+                    "theme" -> R.drawable.ic_set_palette
+                    "zhFont", "jaFont" -> R.drawable.ic_set_trad
+                    "splash" -> R.drawable.ic_set_wave
+                    "sign" -> R.drawable.ic_set_info
+                    else -> R.drawable.ic_set_sliders
+                }
+                holder.addView(settingRow(icon, o.getString("label"), current.substringBefore("（"),
+                    Regex("（(.*)）$").find(current)?.groupValues?.get(1)) { pickFxOption(o) })
+            }
+        }
+    }
+
+    // ---------- 懸浮歌詞 ----------
+
+    private fun setFloating(on: Boolean) {
+        if (!on) {
+            prefs.edit().putBoolean("floating_lyrics", false).putBoolean("floating_pending", false).apply()
+            FloatingLyricsService.stop(this)
+            return
+        }
+        if (!FloatingLyricsService.canDraw(this)) {
+            glassDialog()
+                .setTitle("懸浮歌詞")
+                .setMessage("要在其他 App 上方顯示歌詞，需要開啟「顯示在其他應用程式上層」權限。按「前往設定」後把流詞打開，再回到這裡。")
+                .setPositiveButton("前往設定") { _, _ ->
+                    prefs.edit().putBoolean("floating_pending", true).apply()
+                    try {
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                    } catch (_: ActivityNotFoundException) {
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .setOnDismissListener { enterImmersive() }
+                .show()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFY)
+        }
+        prefs.edit().putBoolean("floating_lyrics", true).putBoolean("floating_pending", false).apply()
+        FloatingLyricsService.start(this)
+    }
+
+    /** On return to the app: finish turning the floating lyrics on, or bring them back after a restart. */
+    private fun resumeFloating() {
+        if (prefs.getBoolean("floating_pending", false) && FloatingLyricsService.canDraw(this)) setFloating(true)
+        else if (prefs.getBoolean("floating_lyrics", false) && FloatingLyricsService.canDraw(this) && !FloatingLyricsService.running) {
+            FloatingLyricsService.start(this)
+        }
+        refreshSettings()
+    }
+
+    // ---------- 待機時鐘 ----------
+
+    private var idleSince = 0L
+    private var standbyShown = false
+    private val standbyTicker = object : Runnable {
+        override fun run() {
+            checkStandby()
+            handler.postDelayed(this, 5000)
+        }
+    }
+
+    private fun currentMode(): String =
+        (if (MediaHub.demo) intent.getStringExtra("mode") else null) ?: prefs.getString("mode", DEFAULT_MODE) ?: DEFAULT_MODE
+
+    /**
+     * Folia's pages switch to the clock page after 30 s without music and back when it plays;
+     * Flowrics' own pages show the clock by themselves.
+     */
+    private fun checkStandby() {
+        val folia = !currentMode().startsWith("fx:")
+        val enabled = prefs.getBoolean("standby", true)
+        val playing = MediaHub.isPlaying() && MediaHub.track != null
+        val now = SystemClock.elapsedRealtime()
+        if (playing) idleSince = 0L else if (idleSince == 0L) idleSince = now
+        if (standbyShown) {
+            if (playing || !enabled || !folia) loadFolia()
+            return
+        }
+        if (folia && enabled && !playing && now - idleSince > 30_000 && settingsRoot == null && !tuningOpen && tutorial == null) {
+            standbyShown = true
+            val cfg = JSONObject().put("subtitleContentMode", subtitleMode()).put("standby", true)
+            webView.loadUrl(FoliaAssetServer.ORIGIN + "/fx.html?fx=clock&host=android-bridge&cfg=" + Uri.encode(cfg.toString()))
+        }
     }
 
     private fun toggle(key: String, default: Boolean) {
