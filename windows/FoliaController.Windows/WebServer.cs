@@ -124,7 +124,11 @@ internal sealed class WebServer : IDisposable
 
     // ---------- HTTP ----------
 
-    private sealed record Request(string Method, string Path, string Query, Dictionary<string, string> Headers, byte[] Body);
+    private sealed record Request(string Method, string Path, string Query, Dictionary<string, string> Headers, byte[] Body)
+    {
+        /// <summary>True when the request comes from this PC itself (not another device on the LAN).</summary>
+        public bool FromThisPc { get; init; }
+    }
 
     private async Task HandleConnectionAsync(TcpClient client, CancellationToken ct)
     {
@@ -143,6 +147,7 @@ internal sealed class WebServer : IDisposable
                     request = await ReadRequestAsync(stream, idle.Token);
                 }
                 if (request == null) return;
+                request = request with { FromThisPc = client.Client.RemoteEndPoint is IPEndPoint { Address: var peer } && IPAddress.IsLoopback(peer) };
 
                 if (!IsAllowedHost(request.Headers.GetValueOrDefault("Host")))
                 {
@@ -269,6 +274,14 @@ internal sealed class WebServer : IDisposable
                         }
                         var ok = await _hub.ControlAsync(action, position);
                         return Json(ok ? "{\"ok\":true}" : "{\"ok\":false}");
+                    case "/api/update/check":
+                        if (!request.FromThisPc) return (403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Forbidden"), NoCache);
+                        _ = Updater.CheckAsync(manual: true);
+                        return Json("{\"ok\":true}");
+                    case "/api/update/install":
+                        if (!request.FromThisPc) return (403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Forbidden"), NoCache);
+                        Updater.RequestInstall();
+                        return Json("{\"ok\":true}");
                     case "/api/settings":
                         _hub.UpdateSettings(body);
                         return Json("{\"ok\":true}");

@@ -21,6 +21,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly ToolStripMenuItem _copyLanItem;
     private readonly ToolStripMenuItem _firewallItem;
     private readonly ToolStripMenuItem _autoStartItem;
+    private readonly ToolStripMenuItem _updateItem;
+    private readonly System.Windows.Forms.Timer _updateTimer = new();
     private readonly ToolStripMenuItem _localFolderItem;
     private readonly ToolStripMenuItem _desktopLyricsItem;
     private readonly ToolStripMenuItem _lockLyricsItem;
@@ -54,6 +56,16 @@ internal sealed class TrayContext : ApplicationContext
         };
         _hub.SettingsChanged += UpdateAudio;
 
+        Updater.CleanUp();
+        Updater.Quit = () => RunOnUi(Quit);
+        Updater.Changed += () => _hub.NotifyLanChanged();
+        Updater.FoundInBackground += build => RunOnUi(() =>
+        {
+            _updateItem.Text = $"更新到新版本 1.0.{build}…";
+            _updateItem.Visible = true;
+            _tray.BalloonTipClicked += OnUpdateBalloonClicked;
+            _tray.ShowBalloonTip(10000, "流詞有新版本", $"1.0.{build} 已經推出，點這裡立即更新（會自動重新開啟）。", ToolTipIcon.Info);
+        });
         StartServer(_settings.AllowLan);
         if (_settings.AllowLan) CheckFirewallAsync(ask: false);
 
@@ -67,10 +79,11 @@ internal sealed class TrayContext : ApplicationContext
         _firewallItem = new ToolStripMenuItem("修復區網連線（Windows 防火牆）…", null, (_, _) => FixFirewall(ask: false));
         _autoStartItem = new ToolStripMenuItem("開機時自動啟動", null, (_, _) => ToggleAutoStart());
         _localFolderItem = new ToolStripMenuItem("本機歌詞資料夾…", null, (_, _) => ChooseLocalFolder());
+        _updateItem = new ToolStripMenuItem("更新到新版本…", null, (_, _) => Updater.RequestInstall()) { Visible = false };
         var exitItem = new ToolStripMenuItem("結束", null, (_, _) => Quit());
         menu.Items.AddRange(new ToolStripItem[]
         {
-            openItem, browserItem, new ToolStripSeparator(),
+            openItem, browserItem, _updateItem, new ToolStripSeparator(),
             _desktopLyricsItem, _lockLyricsItem, new ToolStripSeparator(),
             _lanItem, _copyLanItem, _firewallItem, new ToolStripSeparator(),
             _localFolderItem, _autoStartItem, new ToolStripSeparator(),
@@ -94,6 +107,14 @@ internal sealed class TrayContext : ApplicationContext
             (_, _) => RunOnUi(ShowWindow), null, Timeout.Infinite, executeOnlyOnce: false);
 
         _ = StartSourceAsync();
+        // Look for a new version shortly after start, then every few hours.
+        _updateTimer.Interval = 25_000;
+        _updateTimer.Tick += (_, _) =>
+        {
+            _updateTimer.Interval = 6 * 60 * 60 * 1000;
+            _ = Updater.CheckAsync(manual: false);
+        };
+        _updateTimer.Start();
         if (_settings.DesktopLyrics) SetDesktopLyrics(true);
         if (!startInTray) ShowWindow();
     }
@@ -275,6 +296,12 @@ internal sealed class TrayContext : ApplicationContext
         _settings.Save();
         _tray.ShowBalloonTip(6000, "流詞仍在背景執行",
             "點系統匣的流詞圖示就能再打開；要完全關閉請按右鍵 →「結束」。", ToolTipIcon.Info);
+    }
+
+    private void OnUpdateBalloonClicked(object? sender, EventArgs e)
+    {
+        _tray.BalloonTipClicked -= OnUpdateBalloonClicked;
+        Updater.RequestInstall();
     }
 
     private void OpenInBrowser()

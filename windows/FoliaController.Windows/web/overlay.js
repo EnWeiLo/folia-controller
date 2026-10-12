@@ -85,6 +85,34 @@
     var t = Math.max(0, Math.floor((ms || 0) / 1000));
     return Math.floor(t / 60) + ':' + ('0' + (t % 60)).slice(-2);
   }
+  // 自動更新: only the PC itself can start an update (other devices on the LAN just don't see the row).
+  function renderUpdate() {
+    var row = $('fc-update-row'); if (!row) return;
+    var u = state.update;
+    var local = /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname);
+    if (!u || !local) { row.hidden = true; return; }
+    row.hidden = false;
+    var note = $('fc-update-note'), btn = $('fc-update-btn');
+    btn.disabled = false; btn.onclick = null;
+    var check = function () { post('/api/update/check', {}); };
+    if (u.state === 'available') {
+      note.textContent = '有新版本 ' + u.latest + '（目前 ' + (state.version || '') + '）。更新後會自動重新開啟。';
+      if (u.canInstall) { btn.textContent = '立即更新'; btn.onclick = function () { post('/api/update/install', {}); }; }
+      else { btn.textContent = '開啟下載頁'; btn.onclick = function () { window.open(u.page, '_blank'); }; }
+    } else if (u.state === 'downloading') {
+      note.textContent = '正在下載 ' + u.latest + '… ' + u.percent + '%'; btn.textContent = '下載中'; btn.disabled = true;
+    } else if (u.state === 'installing') {
+      note.textContent = '安裝中，馬上重新開啟…'; btn.textContent = '安裝中'; btn.disabled = true;
+    } else if (u.state === 'checking') {
+      note.textContent = '正在檢查更新…'; btn.textContent = '檢查中'; btn.disabled = true;
+    } else if (u.state === 'error') {
+      note.textContent = u.message || '更新失敗'; btn.textContent = '重試'; btn.onclick = check;
+    } else {
+      note.textContent = u.state === 'uptodate' ? '已經是最新版本。' : '流詞會自動檢查新版本。';
+      btn.textContent = '檢查更新'; btn.onclick = check;
+    }
+  }
+
   function post(path, body) {
     return fetch(path, {
       method: 'POST',
@@ -527,6 +555,7 @@
 
   // ---------- settings panel: tabs, icons, a picture for every animation ----------
   var LINE_ICONS = {
+    update: 'M12 4v11M7 11l5 5 5-5M5 20h14',
     anim: 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6',
     display: 'M3 5h18v11H3zM9 20h6M12 16v4',
     lyrics: 'M4 6h16M4 11h16M4 16h10',
@@ -598,6 +627,8 @@
         '<div class="fc-section">關於</div>' +
         '<div class="fc-about"><div class="fc-logo" aria-hidden="true">' + LOGO_SVG + '</div><div><b>流詞 Flowrics</b>' +
           '<small id="fc-version"></small><small>在任何播放器播歌時，顯示會動的歌詞。</small></div></div>' +
+        '<div class="fc-row fc-row-top" id="fc-update-row" hidden>' + lineIcon('update') + '<div class="fc-note" id="fc-update-note" style="flex:1"></div>' +
+          '<button class="fc-btn fc-small" id="fc-update-btn"></button></div>' +
         '<div class="fc-keys">「Folia 動畫」來自 Folia（github.com/chthollyphile/folia-major），以 AGPL-3.0 授權。' +
           '流詞含有 Folia，同樣依 AGPL-3.0 提供原始碼：github.com/EnWeiLo/folia-controller。' +
           '墨染的筆順資料來自 Make Me a Hanzi／Hanzi Writer（Arphic Public License）與 KanjiVG（CC BY-SA 3.0）。歌詞與音樂的版權屬於各權利人。</div>',
@@ -729,6 +760,7 @@
     $('fc-offset').value = String(state.settings.offsetMs || 0);
     var lan = $('fc-lan');
     if ($('fc-version')) $('fc-version').textContent = state.version ? '版本 ' + state.version : '';
+    renderUpdate();
     if (state.lan.enabled && state.lan.urls.length) {
       lan.innerHTML = '同一個 Wi‑Fi 下的平板或手機，用瀏覽器打開：<br>' +
         state.lan.urls.map(function (u) { return '<code>' + u + '</code>'; }).join('<br>') +
@@ -906,6 +938,8 @@
       state.lyricStatus = d.lyricStatus || '';
       if (d.settings) state.settings = d.settings;
       if (d.lan) state.lan = d.lan;
+      if (d.version) state.version = d.version;
+      if (d.update) state.update = d.update;
       state.receivedAt = performance.now();
       render();
       checkStandby();

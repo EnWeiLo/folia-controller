@@ -4,7 +4,10 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -49,7 +52,10 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
 import org.json.JSONObject
+import java.io.File
+import java.util.Calendar
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -173,6 +179,12 @@ class MainActivity : Activity() {
         applyRefreshRate()
         applyKeepScreenOn()
         enterImmersive()
+        registerReceiver(powerListener, IntentFilter().apply {
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+        })
+        if (intent.getBooleanExtra(DisplayModeService.EXTRA_LAUNCH, false)) wakeForDisplayMode()
+        applyNightDim()
 
         MediaHub.webSink = { json ->
             webView.evaluateJavascript("window.__foliaPush&&window.__foliaPush(${JSONObject.quote(json)})", null)
@@ -192,6 +204,17 @@ class MainActivity : Activity() {
         }
         loadFolia()
         refreshUi()
+        if (!MediaHub.demo) handler.postDelayed({ autoCheckUpdate() }, 8000)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(DisplayModeService.EXTRA_LAUNCH, false)) {
+            wakeForDisplayMode()
+            applyKeepScreenOn()
+            applyNightDim()
+        }
     }
 
     /** A made-up cover for the interface preview. */
@@ -224,12 +247,16 @@ class MainActivity : Activity() {
         resumeFloating()
         handler.removeCallbacks(standbyTicker)
         handler.post(standbyTicker)
+        resumeDisplayMode()
+        handler.removeCallbacks(dimTicker)
+        handler.post(dimTicker)
     }
 
     override fun onPause() {
         resumed = false
         FloatingLyricsService.appInFront = false
         handler.removeCallbacks(standbyTicker)
+        handler.removeCallbacks(dimTicker)
         audio.stop()
         handler.removeCallbacks(progressTicker)
         (getSystemService(DISPLAY_SERVICE) as DisplayManager).unregisterDisplayListener(displayListener)
@@ -239,6 +266,8 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        runCatching { unregisterReceiver(powerListener) }
+        downloadCancelled = true
         MediaHub.webSink = null
         MediaHub.uiListener = null
         // The floating lyrics keep reading the player after the app closes.
@@ -1137,9 +1166,16 @@ class MainActivity : Activity() {
                 } catch (e: ActivityNotFoundException) {
                 }
             }
+            .setNeutralButton("檢查更新") { _, _ -> checkUpdateNow() }
             .setNegativeButton("關閉", null)
             .setOnDismissListener { enterImmersive() }
             .show()
+    }
+
+    private fun versionName(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+    } catch (e: Exception) {
+        ""
     }
 
     private fun setControlsVisible(visible: Boolean) {
@@ -1165,7 +1201,10 @@ class MainActivity : Activity() {
     }
 
     private fun applyKeepScreenOn() {
-        if (prefs.getBoolean("keep_screen_on", true)) {
+        // 顯示器模式: stay awake only while charging, so an unplugged phone sleeps normally.
+        val keep = if (prefs.getBoolean("display_mode", false)) DisplayModeService.isCharging(this)
+        else prefs.getBoolean("keep_screen_on", true)
+        if (keep) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1556,6 +1595,15 @@ class MainActivity : Activity() {
                     toggle("show_fps", false)
                     loadFolia()
                 })
+                body.addView(sectionLabel("顯示器模式（舊手機當歌詞顯示器）"))
+                body.addView(switchRow(R.drawable.ic_set_plug, "顯示器模式", "插上充電線就自動打開流詞並保持亮屏；拔掉後螢幕恢復正常熄屏。手機重新開機後也會自動待命（鎖定畫面上也會顯示）", prefs.getBoolean("display_mode", false)) {
+                    setDisplayMode(!prefs.getBoolean("display_mode", false))
+                })
+                body.addView(switchRow(R.drawable.ic_set_moon, "夜間自動調暗", "充電顯示期間，晚上 22:00～06:00 把螢幕亮度降到很低", prefs.getBoolean("night_dim", true)) {
+                    toggle("night_dim", true)
+                    applyNightDim()
+                })
+                body.addView(settingRow(R.drawable.ic_set_palette, "套用顯示器外觀", "墨染・OLED 純黑", "全黑背景＋純白字，OLED 螢幕省電不烙印；並開啟待機時鐘") { applyDisplayPreset() })
             }
             "lyrics" -> {
                 val offset = prefs.getLong("offset", 0L)
@@ -1594,6 +1642,7 @@ class MainActivity : Activity() {
                     showGestureTutorial()
                 })
                 body.addView(settingRow(R.drawable.ic_set_reload, "重新載入畫面", null, null) { loadFolia() })
+                body.addView(settingRow(R.drawable.ic_set_update, "檢查更新", "版本 ${versionName()}", "有新版本時，下載並安裝（需要確認一次）") { checkUpdateNow() })
                 body.addView(settingRow(R.drawable.ic_set_info, "關於流詞", null, null) { showAbout() })
             }
         }
@@ -1824,6 +1873,180 @@ class MainActivity : Activity() {
             FloatingLyricsService.start(this)
         }
         refreshSettings()
+    }
+
+    // ---------- 自動更新 ----------
+
+    private var downloadCancelled = false
+    private var updateBusy = false
+
+    private fun autoCheckUpdate() {
+        val now = System.currentTimeMillis()
+        if (now - prefs.getLong("update_checked", 0L) < 6 * 3600_000L) return
+        prefs.edit().putLong("update_checked", now).apply()
+        Updater.check(this) { release, _ ->
+            if (release != null && prefs.getInt("update_skipped", 0) != release.build && !isFinishing) offerUpdate(release)
+        }
+    }
+
+    private fun checkUpdateNow() {
+        if (updateBusy) return
+        Toast.makeText(this, "正在檢查更新…", Toast.LENGTH_SHORT).show()
+        Updater.check(this) { release, reached ->
+            when {
+                isFinishing -> {}
+                release != null -> offerUpdate(release)
+                reached -> Toast.makeText(this, "已經是最新版本（${versionName()}）", Toast.LENGTH_LONG).show()
+                else -> Toast.makeText(this, "連不上 GitHub，稍後再試", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun offerUpdate(release: Updater.Release) {
+        if (updateBusy) return
+        closeSettings()
+        glassDialog()
+            .setTitle("流詞有新版本")
+            .setMessage("1.0.${release.build} 已經推出（目前 ${versionName()}）。\n\n按「立即更新」會下載新版本，然後跳出系統的安裝畫面，確認一下就完成；設定都會保留。")
+            .setPositiveButton("立即更新") { _, _ -> startUpdate(release) }
+            .setNegativeButton("稍後") { _, _ -> prefs.edit().putInt("update_skipped", release.build).apply() }
+            .setOnDismissListener { enterImmersive() }
+            .show()
+    }
+
+    private fun startUpdate(release: Updater.Release) {
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            glassDialog()
+                .setTitle("需要允許安裝")
+                .setMessage("第一次更新時，要允許流詞「安裝未知應用程式」。按「前往設定」把流詞打開，回來再按一次更新。")
+                .setPositiveButton("前往設定") { _, _ ->
+                    try {
+                        startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                    } catch (_: ActivityNotFoundException) {
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .setOnDismissListener { enterImmersive() }
+                .show()
+            return
+        }
+        updateBusy = true
+        downloadCancelled = false
+        val dialog = glassDialog()
+            .setTitle("正在下載 1.0.${release.build}")
+            .setMessage("0%")
+            .setCancelable(false)
+            .setNegativeButton("取消") { _, _ -> downloadCancelled = true }
+            .setOnDismissListener { enterImmersive() }
+            .show()
+        Updater.download(this, release, { percent -> dialog.setMessage("$percent%") }, { downloadCancelled }) { file ->
+            updateBusy = false
+            runCatching { dialog.dismiss() }
+            when {
+                downloadCancelled -> {}
+                file == null -> Toast.makeText(this, "下載失敗，稍後再試", Toast.LENGTH_LONG).show()
+                !Updater.install(this, file) -> Toast.makeText(this, "無法開始安裝", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // ---------- 顯示器模式 ----------
+
+    private val powerListener = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            applyKeepScreenOn()
+            applyNightDim()
+            if (intent.action == Intent.ACTION_POWER_DISCONNECTED) {
+                // Back to a normal app: no longer shown over the lock screen.
+                @Suppress("DEPRECATION")
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+            }
+        }
+    }
+
+    private val dimTicker = object : Runnable {
+        override fun run() {
+            applyNightDim()
+            handler.postDelayed(this, 60_000)
+        }
+    }
+
+    /** Started by plugging in the charger: light the screen, even over the lock screen. */
+    @Suppress("DEPRECATION")
+    private fun wakeForDisplayMode() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        handler.postDelayed({ window.clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON) }, 10_000)
+    }
+
+    /** While 顯示器模式 is charging, the screen goes very dim between 22:00 and 06:00. */
+    private fun applyNightDim() {
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val night = prefs.getBoolean("display_mode", false) && prefs.getBoolean("night_dim", true) &&
+            DisplayModeService.isCharging(this) && (hour >= 22 || hour < 6)
+        val target = if (night) 0.04f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        if (window.attributes.screenBrightness != target) {
+            window.attributes = window.attributes.apply { screenBrightness = target }
+        }
+    }
+
+    private fun setDisplayMode(on: Boolean) {
+        if (!on) {
+            prefs.edit().putBoolean("display_mode", false).putBoolean("display_pending", false).apply()
+            DisplayModeService.stop(this)
+            applyKeepScreenOn()
+            applyNightDim()
+            refreshSettings()
+            return
+        }
+        if (!DisplayModeService.canDraw(this)) {
+            glassDialog()
+                .setTitle("顯示器模式")
+                .setMessage("要在插上充電線時自動打開流詞，需要開啟「顯示在其他應用程式上層」權限。按「前往設定」把流詞打開，再回到這裡。")
+                .setPositiveButton("前往設定") { _, _ ->
+                    prefs.edit().putBoolean("display_pending", true).apply()
+                    try {
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                    } catch (_: ActivityNotFoundException) {
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .setOnDismissListener { enterImmersive() }
+                .show()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFY)
+        }
+        prefs.edit().putBoolean("display_mode", true).putBoolean("display_pending", false).apply()
+        DisplayModeService.start(this)
+        applyKeepScreenOn()
+        applyNightDim()
+        refreshSettings()
+    }
+
+    /** On return to the app: finish turning 顯示器模式 on, or bring its waiting service back. */
+    private fun resumeDisplayMode() {
+        if (prefs.getBoolean("display_pending", false) && DisplayModeService.canDraw(this)) setDisplayMode(true)
+        else if (prefs.getBoolean("display_mode", false) && DisplayModeService.canDraw(this) && !DisplayModeService.running) {
+            DisplayModeService.start(this)
+        }
+        applyKeepScreenOn()
+        applyNightDim()
+    }
+
+    /** 墨染 in the OLED black theme with the standby clock: the look for an old phone that only shows lyrics. */
+    private fun applyDisplayPreset() {
+        prefs.edit().putString("mode", "fx:ink").putBoolean("standby", true).apply()
+        closeSettings()
+        loadFolia()
+        val js = "(function(){var F=window.Flowrics;if(F&&F.S&&F.S.fxId==='ink'){F.setOption('theme','oled');return 1}return 0})()"
+        listOf(2500L, 5000L, 9000L).forEach { delay ->
+            handler.postDelayed({ webView.evaluateJavascript(js, null) }, delay)
+        }
+        Toast.makeText(this, "已套用：墨染・OLED 純黑＋待機時鐘", Toast.LENGTH_LONG).show()
     }
 
     // ---------- 待機時鐘 ----------

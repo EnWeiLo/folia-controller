@@ -618,3 +618,4 @@ html.fc-idle, html.fc-idle * { cursor: none !important; }
   border-radius: calc(var(--u) * 28) calc(var(--u) * 28) 0 0;
 }
 .fc-tabs { top: calc(var(--u) * 50); margin-top: 0; box-shadow: 0 calc(var(--u) * -12) 0 calc(var(--u) * 6) rgba(34, 34, 42, 0.9); }
+.fc-row[hidden] { display: none; }

@@ -60,9 +60,16 @@ shot phone-settings
 launch --ez demo true --ez settings true --es settingsTab display
 sleep 18
 shot phone-settings-display
+# the same tab scrolled down to 顯示器模式
+adb shell input swipe $CX $((CY*3/2)) $CX $((CY/4)) 400
+sleep 2
+shot phone-settings-display-mode
 launch --ez demo true --ez settings true --es settingsTab lyrics
 sleep 18
 shot phone-settings-lyrics
+launch --ez demo true --ez settings true --es settingsTab other
+sleep 18
+shot phone-settings-other
 # 墨染時鐘 (the standby screen) and 墨染
 launch --ez demo true --es mode fx:clock
 sleep 16
