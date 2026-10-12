@@ -165,5 +165,5 @@ Windows 版（`windows/FoliaController.Windows`，C# / .NET 8）不需要橋接�
 名稱與圖示：流詞 Flowrics，黑底白色的「聲波流進文字游標」圖示（`branding/`）。App 內的「關於」頁列出 Folia 的出處與授權。
 
 
-Folia 以 AGPL-3.0 授權。這個 APK 內含 Folia 的網頁打包檔，自己使用沒有問題；如果要散布給別人，需要依照 AGPL 一併提供原始碼。
+本專案以 **AGPL-3.0** 授權（見 `LICENSE`），因為內含以 AGPL-3.0 授權的 Folia。原始碼公開在這個儲存庫，散布時請依 AGPL 保留授權並提供原始碼。
 音樂與歌詞的版權屬於各權利人。
