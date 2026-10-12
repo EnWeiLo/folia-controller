@@ -476,6 +476,12 @@ internal sealed class WebServer : IDisposable
             {
                 using var doc = JsonDocument.Parse(message.ToArray());
                 if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                    doc.RootElement.TryGetProperty("type", out var pingType) && pingType.GetString() == "ping")
+                {
+                    // Lets a page on a flaky Wi-Fi tell a live connection from one that went silent.
+                    client.Enqueue("{\"event\":\"Pong\"}");
+                }
+                else if (doc.RootElement.ValueKind == JsonValueKind.Object &&
                     doc.RootElement.TryGetProperty("type", out var type) && type.GetString() == "resync")
                 {
                     // A page woke up from being frozen: give every page a full refresh

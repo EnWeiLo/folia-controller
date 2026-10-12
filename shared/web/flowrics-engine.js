@@ -546,11 +546,32 @@
   function connect() {
     var socket, retry = 0;
     function open() {
-      try { socket = new WebSocket((location.protocol === 'https:' && !isAndroid ? 'wss://' : 'ws://') + host + '/api/ws/lyric'); }
+      var mine;
+      try { mine = socket = new WebSocket((location.protocol === 'https:' && !isAndroid ? 'wss://' : 'ws://') + host + '/api/ws/lyric'); }
       catch (e) { setTimeout(open, 2000); return; }
-      socket.onopen = function () { retry = 0; };
-      socket.onmessage = function (e) { onMessage(e.data); };
-      socket.onclose = function () { retry = Math.min(retry + 1, 6); setTimeout(open, 500 * retry); };
+      var lastHeard = Date.now(), timer = 0;
+      var reopen = function () {
+        if (timer) { clearInterval(timer); timer = 0; }
+        retry = Math.min(retry + 1, 6);
+        setTimeout(open, 500 * retry);
+      };
+      mine.onopen = function () {
+        retry = 0; lastHeard = Date.now();
+        // A Wi-Fi dropout can leave a socket "open" that never hears anything again: the PC app answers
+        // a ping, and a socket that stays silent for 20 s is replaced.
+        if (isAndroid || host === 'android-bridge') return; // the Android app's own feed is in-process, no network
+        timer = setInterval(function () {
+          if (Date.now() - lastHeard > 20000) {
+            mine.onclose = null; mine.onmessage = null;
+            try { mine.close(); } catch (e) { /* already gone */ }
+            reopen();
+            return;
+          }
+          try { mine.send('{"type":"ping"}'); } catch (e) { /* closing */ }
+        }, 8000);
+      };
+      mine.onmessage = function (e) { lastHeard = Date.now(); onMessage(e.data); };
+      mine.onclose = reopen;
     }
     open();
   }

@@ -248,7 +248,11 @@ class MainActivity : Activity() {
         handler.removeCallbacks(standbyTicker)
         handler.post(standbyTicker)
         resumeDisplayMode()
-        if (sourceIsPc()) pcTick()
+        if (sourceIsPc()) {
+            // The page's connections stop while the screen is off: start the page again.
+            pcNeedsReload = true
+            pcTick()
+        }
         handler.removeCallbacks(dimTicker)
         handler.post(dimTicker)
     }
@@ -324,6 +328,10 @@ class MainActivity : Activity() {
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                     request.url.host != FoliaAssetServer.HOST && request.url.host != pcLoadedAddr?.substringBefore(':')
+
+                override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+                    if (request.isForMainFrame && sourceIsPc() && pcConnected) pcNeedsReload = true
+                }
 
                 override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
                     // The renderer crashed or was killed for memory: rebuild everything.
@@ -1945,9 +1953,13 @@ class MainActivity : Activity() {
         handler.removeCallbacks(pcTicker)
         val gen = ++pcGen
         val remembered = prefs.getString("pc_addr", null)
+        // A whole-network search is heavy: do it when nothing is remembered, or at most once a minute.
+        val mayScan = remembered == null || SystemClock.elapsedRealtime() - pcLastScan > 60_000
         Thread {
-            var found = remembered?.let { PcSource.probeAddr(it, 1200) }
-            if (found == null) {
+            // Wi-Fi on a phone can answer slowly for a moment: give the known address time.
+            var found = remembered?.let { PcSource.probeAddr(it, 2500) }
+            if (found == null && mayScan) {
+                pcLastScan = SystemClock.elapsedRealtime()
                 val all = PcSource.scan()
                 found = all.firstOrNull { it.addr == remembered } ?: all.firstOrNull()
             }
@@ -1962,7 +1974,8 @@ class MainActivity : Activity() {
             pcClockShown = false
             pcFails = 0
             prefs.edit().putString("pc_addr", found.addr).putString("pc_name", found.name).apply()
-            if (!pcConnected || pcLoadedAddr != found.addr) {
+            if (!pcConnected || pcLoadedAddr != found.addr || pcNeedsReload) {
+                pcNeedsReload = false
                 pcConnected = true
                 pcLoadedAddr = found.addr
                 webView.loadUrl("http://${found.addr}/")
@@ -1974,10 +1987,14 @@ class MainActivity : Activity() {
             handler.postDelayed(pcTicker, 10_000)
             return
         }
-        if (pcConnected && ++pcFails < 2) {
-            // One missed answer is not "gone": ask again soon.
-            handler.postDelayed(pcTicker, 4_000)
-            return
+        if (pcConnected) {
+            // The page's own connection may have died with the dropout: load it fresh once the PC answers again.
+            pcNeedsReload = true
+            if (++pcFails < 3) {
+                // A missed answer or two is not "gone": ask again soon.
+                handler.postDelayed(pcTicker, 4_000)
+                return
+            }
         }
         if (pcConnected || pcLoadedAddr == null && !pcClockShown) {
             pcConnected = false
@@ -1996,6 +2013,8 @@ class MainActivity : Activity() {
     }
 
     private var pcClockShown = false
+    private var pcNeedsReload = false
+    private var pcLastScan = 0L
 
     private fun showPcHelp() {
         glassDialog()

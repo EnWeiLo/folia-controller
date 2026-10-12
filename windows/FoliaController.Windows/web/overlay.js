@@ -918,9 +918,31 @@
   var retry = 0;
   function connect() {
     var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws/lyric';
-    try { socket = new WebSocket(url); } catch (e) { return scheduleReconnect(); }
-    socket.onopen = function () { retry = 0; state.connected = true; render(); };
-    socket.onmessage = function (event) {
+    var mine;
+    try { mine = socket = new WebSocket(url); } catch (e) { return scheduleReconnect(); }
+    var lastHeard = Date.now(), timer = 0;
+    var drop = function () {
+      if (timer) { clearInterval(timer); timer = 0; }
+      if (socket === mine) socket = null;
+      state.connected = false;
+      render();
+      scheduleReconnect();
+    };
+    mine.onopen = function () {
+      retry = 0; lastHeard = Date.now(); state.connected = true; render();
+      // A Wi-Fi dropout can leave a socket "open" that never hears anything again: ping, and replace a silent one.
+      timer = setInterval(function () {
+        if (Date.now() - lastHeard > 20000) {
+          mine.onclose = null; mine.onmessage = null;
+          try { mine.close(); } catch (e) { /* already gone */ }
+          drop();
+          return;
+        }
+        try { mine.send('{"type":"ping"}'); } catch (e) { /* closing */ }
+      }, 8000);
+    };
+    mine.onmessage = function (event) {
+      lastHeard = Date.now();
       var msg;
       try { msg = JSON.parse(event.data); } catch (e) { return; }
       if (!msg || msg.event !== 'ControllerState' || !msg.data) return;
@@ -944,13 +966,8 @@
       render();
       checkStandby();
     };
-    socket.onclose = function () {
-      socket = null;
-      state.connected = false;
-      render();
-      scheduleReconnect();
-    };
-    socket.onerror = function () { /* onclose follows */ };
+    mine.onclose = drop;
+    mine.onerror = function () { /* onclose follows */ };
   }
   function scheduleReconnect() {
     retry = Math.min(retry + 1, 6);

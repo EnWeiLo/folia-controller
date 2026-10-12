@@ -104,7 +104,8 @@
   window.__fcAudioFrame = frame;
 
   // Windows app and LAN browsers: the audio stream from the PC.
-  var isAndroid = !!window.__FOLIA_ANDROID_CONTROLLER__ || !!window.FoliaNative;
+  // The Android app's own pages are https; its bridge object also exists on the PC's page it may show over http.
+  var isAndroid = !!window.__FOLIA_ANDROID_CONTROLLER__ || (!!window.FoliaNative && location.protocol === 'https:');
   if (!isAndroid && /^https?:$/.test(location.protocol)) {
     var retry = 0;
     var connect = function () {
@@ -114,16 +115,32 @@
       } catch (e) {
         return;
       }
-      socket.onopen = function () { retry = 0; };
+      var lastHeard = Date.now(), timer = 0;
+      var again = function () {
+        if (timer) { clearInterval(timer); timer = 0; }
+        retry = Math.min(retry + 1, 8);
+        setTimeout(connect, 1000 * retry);
+      };
+      socket.onopen = function () {
+        retry = 0; lastHeard = Date.now();
+        // Replace a socket a Wi-Fi dropout left silent (the PC app answers pings).
+        timer = setInterval(function () {
+          if (Date.now() - lastHeard > 20000) {
+            socket.onclose = null; socket.onmessage = null;
+            try { socket.close(); } catch (e) { /* already gone */ }
+            again();
+            return;
+          }
+          try { socket.send('{"type":"ping"}'); } catch (e) { /* closing */ }
+        }, 8000);
+      };
       socket.onmessage = function (event) {
+        lastHeard = Date.now();
         var msg;
         try { msg = JSON.parse(event.data); } catch (e) { return; }
         if (msg && typeof msg.s === 'string') frame(msg.s, msg.p);
       };
-      socket.onclose = function () {
-        retry = Math.min(retry + 1, 8);
-        setTimeout(connect, 1000 * retry);
-      };
+      socket.onclose = again;
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', connect);
     else connect();
