@@ -130,7 +130,9 @@ jobs:
       - name: Unit tests
         env:
           LIVE_LYRICS: "1"
-        run: gradle --no-daemon :app:testReleaseUnitTest
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:testReleaseUnitTest 2>&1 | tee android-unit.log
 
       - name: Build APK
         run: gradle --no-daemon --stacktrace :app:assembleRelease
@@ -141,6 +143,8 @@ jobs:
           mkdir -p android-reports
           cp app/build/reports/live-lyrics.txt android-reports/ 2>/dev/null || true
           cp -r app/build/test-results android-reports/ 2>/dev/null || true
+          grep -nE "^e: |FAILED|What went wrong|Exception|expected" -A3 android-unit.log | head -80 > android-reports/unit-errors.txt 2>/dev/null || true
+          tail -n 60 android-unit.log > android-reports/unit-tail.txt 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: always()
