@@ -696,6 +696,7 @@ internal sealed class MediaHub
             },
             ["lan"] = new JsonObject { ["enabled"] = lanEnabled, ["urls"] = urlArray },
             ["version"] = AppVersion,
+            ["host"] = Environment.MachineName,
             ["update"] = Updater.Snapshot(),
         };
         return Envelope("ControllerState", data);

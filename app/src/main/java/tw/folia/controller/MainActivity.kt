@@ -248,6 +248,7 @@ class MainActivity : Activity() {
         handler.removeCallbacks(standbyTicker)
         handler.post(standbyTicker)
         resumeDisplayMode()
+        if (sourceIsPc()) pcTick()
         handler.removeCallbacks(dimTicker)
         handler.post(dimTicker)
     }
@@ -257,6 +258,8 @@ class MainActivity : Activity() {
         FloatingLyricsService.appInFront = false
         handler.removeCallbacks(standbyTicker)
         handler.removeCallbacks(dimTicker)
+        handler.removeCallbacks(pcTicker)
+        pcGen++
         audio.stop()
         handler.removeCallbacks(progressTicker)
         (getSystemService(DISPLAY_SERVICE) as DisplayManager).unregisterDisplayListener(displayListener)
@@ -320,7 +323,7 @@ class MainActivity : Activity() {
                     assetServer.intercept(request)
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                    request.url.host != FoliaAssetServer.HOST
+                    request.url.host != FoliaAssetServer.HOST && request.url.host != pcLoadedAddr?.substringBefore(':')
 
                 override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
                     // The renderer crashed or was killed for memory: rebuild everything.
@@ -679,7 +682,7 @@ class MainActivity : Activity() {
         checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun startAudioIfWanted() {
-        if (!prefs.getBoolean("audio_reactive", false) || !hasAudioPermission() || audio.running) return
+        if (sourceIsPc() || !prefs.getBoolean("audio_reactive", false) || !hasAudioPermission() || audio.running) return
         val error = audio.start()
         if (error != null) {
             android.widget.Toast.makeText(this, "這台裝置不讓 App 讀取正在播放的聲音（$error）", android.widget.Toast.LENGTH_LONG).show()
@@ -854,6 +857,8 @@ class MainActivity : Activity() {
             settingsRoot != null -> closeSettings()
             tutorial != null -> hideGestureTutorial(remember = true)
             tuningOpen -> webView.evaluateJavascript("window.FcTuning&&FcTuning.close()", null)
+            // Showing the PC's screen: nothing of ours is on top, so Back opens the settings.
+            sourceIsPc() -> showSettings()
             else -> super.onBackPressed()
         }
     }
@@ -903,6 +908,11 @@ class MainActivity : Activity() {
     // ---------- behaviour ----------
 
     private fun loadFolia() {
+        if (sourceIsPc()) {
+            startPcSource()
+            return
+        }
+        stopPcSource()
         standbyShown = false
         // The card's see-through level follows the quality (no blur behind it in 流暢).
         appliedPalette = null
@@ -932,14 +942,15 @@ class MainActivity : Activity() {
     private fun updatePermissionState() {
         val demo = MediaHub.demo
         val granted = demo || MediaHub.hasNotificationAccess(this)
-        permissionPanel.visibility = if (granted) View.GONE else View.VISIBLE
+        val pc = sourceIsPc()
+        permissionPanel.visibility = if (granted || pc) View.GONE else View.VISIBLE
         if (granted && !demo) {
             MediaHub.start()
             MediaHub.pushSnapshot()
         }
         refreshUi()
         val wantTutorial = if (demo) intent.getBooleanExtra("tutorial", false)
-        else granted && !prefs.getBoolean("gesture_tutorial_shown", false)
+        else granted && !pc && !prefs.getBoolean("gesture_tutorial_shown", false)
         if (wantTutorial) showGestureTutorial()
     }
 
@@ -1553,6 +1564,14 @@ class MainActivity : Activity() {
         val isFx = mode.startsWith("fx:")
         when (settingsTab) {
             "anim" -> {
+                if (sourceIsPc()) {
+                    body.addView(label(14f, 0xCCFFFFFF.toInt()).apply {
+                        text = "目前顯示的是電腦的畫面。動畫、歌詞等設定，請在電腦的畫面上點一下，用畫面上的設定調整（按返回鍵可以回到這裡）。"
+                        maxLines = 6
+                        setPadding(dp(22), dp(18), dp(22), dp(18))
+                    })
+                    return
+                }
                 if (isFx) {
                     val holder = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
                     body.addView(holder)
@@ -1595,6 +1614,13 @@ class MainActivity : Activity() {
                     toggle("show_fps", false)
                     loadFolia()
                 })
+                body.addView(sectionLabel("顯示來源"))
+                body.addView(settingRow(R.drawable.ic_set_devices, "顯示來源", if (sourceIsPc()) "電腦" else "這支手機",
+                    "這支手機正在播的音樂，或同一個 Wi‑Fi 裡電腦版流詞正在播的音樂") { pickSource() })
+                if (sourceIsPc()) {
+                    body.addView(settingRow(R.drawable.ic_set_plug, "連線的電腦", prefs.getString("pc_name", null)?.takeIf { it.isNotBlank() }
+                        ?: prefs.getString("pc_addr", null) ?: "尚未連線", "會自動尋找；找不到時顯示時鐘，電腦一出現就自動接上") { pickPc() })
+                }
                 body.addView(sectionLabel("顯示器模式（舊手機當歌詞顯示器）"))
                 body.addView(switchRow(R.drawable.ic_set_plug, "顯示器模式", "插上充電線就自動打開流詞並保持亮屏；拔掉後螢幕恢復正常熄屏。手機重新開機後也會自動待命（鎖定畫面上也會顯示）", prefs.getBoolean("display_mode", false)) {
                     setDisplayMode(!prefs.getBoolean("display_mode", false))
@@ -1875,6 +1901,190 @@ class MainActivity : Activity() {
         refreshSettings()
     }
 
+    // ---------- 顯示來源：電腦 ----------
+
+    private var pcLoadedAddr: String? = null
+    private var pcConnected = false
+    private var pcFails = 0
+    private var pcGen = 0
+    private var pcHelpPending = false
+    private var pcAnnounced = false
+    private val pcTicker = Runnable { pcTick() }
+
+    private fun sourceIsPc() = !MediaHub.demo && prefs.getString("source", "phone") == "pc"
+
+    /** In PC mode nothing of ours covers the page: its own controls are used. */
+    private fun applySourceUi() {
+        val pc = sourceIsPc()
+        gestureLayer.visibility = if (pc) View.GONE else View.VISIBLE
+        card.visibility = if (pc) View.GONE else if (controlsVisible) View.VISIBLE else View.INVISIBLE
+        feedback.visibility = if (pc) View.GONE else feedback.visibility
+    }
+
+    private fun startPcSource() {
+        applySourceUi()
+        updatePermissionState()
+        handler.removeCallbacks(pcTicker)
+        pcLoadedAddr = null
+        pcConnected = false
+        pcFails = 0
+        pcTick()
+    }
+
+    private fun stopPcSource() {
+        handler.removeCallbacks(pcTicker)
+        pcGen++
+        pcLoadedAddr = null
+        pcConnected = false
+        applySourceUi()
+    }
+
+    /** Looks for the PC (the remembered address first, then the whole network) and follows it coming and going. */
+    private fun pcTick() {
+        if (!sourceIsPc() || isFinishing) return
+        handler.removeCallbacks(pcTicker)
+        val gen = ++pcGen
+        val remembered = prefs.getString("pc_addr", null)
+        Thread {
+            var found = remembered?.let { PcSource.probeAddr(it, 1200) }
+            if (found == null) {
+                val all = PcSource.scan()
+                found = all.firstOrNull { it.addr == remembered } ?: all.firstOrNull()
+            }
+            runOnUiThread { pcResult(gen, found) }
+        }.start()
+    }
+
+    private fun pcResult(gen: Int, found: PcSource.Found?) {
+        if (gen != pcGen || !sourceIsPc() || isFinishing) return
+        if (found != null) {
+            pcHelpPending = false
+            pcClockShown = false
+            pcFails = 0
+            prefs.edit().putString("pc_addr", found.addr).putString("pc_name", found.name).apply()
+            if (!pcConnected || pcLoadedAddr != found.addr) {
+                pcConnected = true
+                pcLoadedAddr = found.addr
+                webView.loadUrl("http://${found.addr}/")
+                if (!pcAnnounced) {
+                    pcAnnounced = true
+                    Toast.makeText(this, "已連到電腦 ${found.name.ifBlank { found.addr }}。按返回鍵可以開啟設定", Toast.LENGTH_LONG).show()
+                }
+            }
+            handler.postDelayed(pcTicker, 10_000)
+            return
+        }
+        if (pcConnected && ++pcFails < 2) {
+            // One missed answer is not "gone": ask again soon.
+            handler.postDelayed(pcTicker, 4_000)
+            return
+        }
+        if (pcConnected || pcLoadedAddr == null && !pcClockShown) {
+            pcConnected = false
+            pcLoadedAddr = null
+            pcClockShown = true
+            pcAnnounced = false
+            val cfg = JSONObject().put("subtitleContentMode", subtitleMode()).put("standby", true)
+            webView.loadUrl(FoliaAssetServer.ORIGIN + "/fx.html?fx=clock&host=android-bridge&cfg=" + Uri.encode(cfg.toString()))
+            Toast.makeText(this, "找不到電腦，先顯示時鐘，會持續尋找", Toast.LENGTH_LONG).show()
+        }
+        if (pcHelpPending) {
+            pcHelpPending = false
+            showPcHelp()
+        }
+        handler.postDelayed(pcTicker, 10_000)
+    }
+
+    private var pcClockShown = false
+
+    private fun showPcHelp() {
+        glassDialog()
+            .setTitle("找不到電腦")
+            .setMessage("請確認：\n1. 電腦已開啟流詞\n2. 在電腦系統匣的流詞圖示按右鍵，勾選「允許區網裝置連線」\n3. 手機和電腦連的是同一個 Wi‑Fi\n\n連不上的話，可以在電腦按右鍵 →「修復區網連線」，或手動輸入電腦的網址。")
+            .setPositiveButton("手動輸入") { _, _ -> enterPcAddress() }
+            .setNegativeButton("知道了", null)
+            .setOnDismissListener { enterImmersive() }
+            .show()
+    }
+
+    private fun pickSource() {
+        val current = if (sourceIsPc()) 1 else 0
+        glassDialog()
+            .setTitle("顯示來源")
+            .setSingleChoiceItems(
+                arrayOf("這支手機\n顯示這支手機正在播放的音樂", "電腦\n顯示電腦正在播放的音樂（需要電腦版流詞）"), current,
+            ) { dialog, which ->
+                dialog.dismiss()
+                setSource(which == 1)
+            }
+            .setOnDismissListener { enterImmersive() }
+            .show()
+    }
+
+    private fun setSource(pc: Boolean) {
+        prefs.edit().putString("source", if (pc) "pc" else "phone").apply()
+        pcClockShown = false
+        pcAnnounced = false
+        pcHelpPending = pc && prefs.getString("pc_addr", null) == null
+        if (!pc) updatePermissionState()
+        loadFolia()
+        refreshSettings()
+    }
+
+    private fun pickPc() {
+        Toast.makeText(this, "正在尋找電腦…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val all = PcSource.scan()
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                val names = all.map { it.label } + "手動輸入位址…"
+                glassDialog()
+                    .setTitle(if (all.isEmpty()) "找不到電腦" else "選擇電腦")
+                    .setItems(names.toTypedArray()) { _, which ->
+                        if (which < all.size) choosePc(all[which].addr, all[which].name) else enterPcAddress()
+                    }
+                    .setNegativeButton("取消", null)
+                    .setOnDismissListener { enterImmersive() }
+                    .show()
+            }
+        }.start()
+    }
+
+    private fun choosePc(addr: String, name: String) {
+        prefs.edit().putString("pc_addr", addr).putString("pc_name", name).apply()
+        pcLoadedAddr = null
+        pcConnected = false
+        pcClockShown = false
+        pcTick()
+        refreshSettings()
+    }
+
+    private fun enterPcAddress() {
+        val input = android.widget.EditText(this).apply {
+            hint = "例如 192.168.1.20"
+            setText(prefs.getString("pc_addr", ""))
+            setTextColor(Color.WHITE)
+            setHintTextColor(0x66FFFFFF)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine()
+        }
+        glassDialog()
+            .setTitle("電腦的位址")
+            .setMessage("在電腦的流詞圖示按右鍵 →「複製區網網址」，貼在這裡。")
+            .setView(input)
+            .setPositiveButton("連線") { _, _ ->
+                val parsed = PcSource.parseAddr(input.text.toString())
+                if (parsed == null) {
+                    Toast.makeText(this, "位址格式不對", Toast.LENGTH_SHORT).show()
+                } else {
+                    choosePc("${parsed.first}:${parsed.second}", "")
+                }
+            }
+            .setNegativeButton("取消", null)
+            .setOnDismissListener { enterImmersive() }
+            .show()
+    }
+
     // ---------- 自動更新 ----------
 
     private var downloadCancelled = false
@@ -2068,6 +2278,7 @@ class MainActivity : Activity() {
      * Flowrics' own pages show the clock by themselves.
      */
     private fun checkStandby() {
+        if (sourceIsPc()) return
         val folia = !currentMode().startsWith("fx:")
         val enabled = prefs.getBoolean("standby", true)
         val playing = MediaHub.isPlaying() && MediaHub.track != null
