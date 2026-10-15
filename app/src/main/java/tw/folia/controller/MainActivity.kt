@@ -204,7 +204,7 @@ class MainActivity : Activity() {
         }
         loadFolia()
         refreshUi()
-        if (!MediaHub.demo) handler.postDelayed({ autoCheckUpdate() }, 8000)
+        if (!ciDemo()) handler.postDelayed({ autoCheckUpdate() }, 8000)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -898,6 +898,10 @@ class MainActivity : Activity() {
             text = "開啟通知使用權設定"
             setOnClickListener { openNotificationAccessSettings() }
         })
+        addView(Button(context).apply {
+            text = "先略過，看看示範"
+            setOnClickListener { skipPermission() }
+        })
         addView(TextView(context).apply {
             text = "如果開關是灰色、或出現「受限制的設定」：\n先按下面的按鈕到 App 資訊 → 右上角 ⋮ → 「允許受限制的設定」，再回來開啟通知使用權。"
             setTextColor(0x99FFFFFF.toInt())
@@ -948,18 +952,32 @@ class MainActivity : Activity() {
     }
 
     private fun updatePermissionState() {
-        val demo = MediaHub.demo
-        val granted = demo || MediaHub.hasNotificationAccess(this)
+        val demo = intent.getBooleanExtra("demo", false)
+        val access = MediaHub.hasNotificationAccess(this)
+        val skipped = prefs.getBoolean("permission_skipped", false)
+        // 略過: look around with a made-up song until the permission is given.
+        if (!demo) {
+            if (access && MediaHub.demo) MediaHub.stopDemo()
+            else if (!access && skipped && !MediaHub.demo && !sourceIsPc()) MediaHub.startDemo(demoCover())
+        }
+        val granted = demo || access
         val pc = sourceIsPc()
-        permissionPanel.visibility = if (granted || pc) View.GONE else View.VISIBLE
+        permissionPanel.visibility = if (granted || skipped || pc) View.GONE else View.VISIBLE
         if (granted && !demo) {
             MediaHub.start()
             MediaHub.pushSnapshot()
         }
         refreshUi()
         val wantTutorial = if (demo) intent.getBooleanExtra("tutorial", false)
-        else granted && !pc && !prefs.getBoolean("gesture_tutorial_shown", false)
+        else (granted || skipped) && !pc && !prefs.getBoolean("gesture_tutorial_shown", false)
         if (wantTutorial) showGestureTutorial()
+    }
+
+    /** 略過: no permission for now; a made-up song shows what the app looks like. */
+    private fun skipPermission() {
+        prefs.edit().putBoolean("permission_skipped", true).apply()
+        updatePermissionState()
+        Toast.makeText(this, "目前顯示的是示範歌曲。要同步其他 App 的歌，到「設定 → 其他」開啟通知使用權", Toast.LENGTH_LONG).show()
     }
 
     private fun openNotificationAccessSettings() {
@@ -1671,6 +1689,12 @@ class MainActivity : Activity() {
                 })
             }
             else -> {
+                if (!sourceIsPc() && !MediaHub.hasNotificationAccess(this)) {
+                    body.addView(settingRow(R.drawable.ic_set_music, "開啟通知使用權", "尚未開啟", "讓流詞讀取其他 App 正在播放的歌，才能同步顯示歌詞") {
+                        closeSettings()
+                        openNotificationAccessSettings()
+                    })
+                }
                 body.addView(settingRow(R.drawable.ic_set_gesture, "手勢說明", null, null) {
                     closeSettings()
                     showGestureTutorial()
@@ -1919,7 +1943,10 @@ class MainActivity : Activity() {
     private var pcAnnounced = false
     private val pcTicker = Runnable { pcTick() }
 
-    private fun sourceIsPc() = !MediaHub.demo && prefs.getString("source", "phone") == "pc"
+    /** CI screenshots start the app with a made-up song (a preview for people who skipped the permission is not that). */
+    private fun ciDemo() = intent.getBooleanExtra("demo", false)
+
+    private fun sourceIsPc() = !ciDemo() && prefs.getString("source", "phone") == "pc"
 
     /** In PC mode nothing of ours covers the page: its own controls are used. */
     private fun applySourceUi() {
@@ -2290,7 +2317,7 @@ class MainActivity : Activity() {
     }
 
     private fun currentMode(): String =
-        (if (MediaHub.demo) intent.getStringExtra("mode") else null) ?: prefs.getString("mode", DEFAULT_MODE) ?: DEFAULT_MODE
+        (if (ciDemo()) intent.getStringExtra("mode") else null) ?: prefs.getString("mode", DEFAULT_MODE) ?: DEFAULT_MODE
 
     /**
      * Folia's pages switch to the clock page after 30 s without music and back when it plays;

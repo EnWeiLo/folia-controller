@@ -540,6 +540,20 @@ object MediaHub {
         pushSnapshot()
     }
 
+    /** Leaves the preview (the person gave the permission): back to the real player. */
+    fun stopDemo() {
+        if (!demo) return
+        demo = false
+        lyricRequestId++
+        track = null
+        coverSource = null
+        lyricResult = null
+        lyricContainer = null
+        lyricStatus = ""
+        pushSnapshot()
+        notifyUi()
+    }
+
     // ---------- events for Folia ----------
 
     fun pushSnapshot() {
