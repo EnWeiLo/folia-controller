@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="tw.folia.controller.LyricFormatsTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-15T02:44:55.885Z" hostname="runnervm8k3b6" time="0.027">
+  <properties/>
+  <testcase name="fixturesMatchExpectedOutput" classname="tw.folia.controller.LyricFormatsTest" time="0.027"/>
+  <system-out><![CDATA[PASS amll.ttml — matches
+PASS apple.ttml — matches
+PASS english.lrc — matches
+PASS enhanced.lrc — matches
+PASS qingtian.qrc — matches
+PASS qingtian.yrc — matches
+PASS tadaima.krc — matches
+PASS yoru.yrc — matches
+PASS qrc vector 0 — decrypts
+PASS qrc vector 1 — decrypts
+PASS qrc vector 2 — decrypts
+PASS krc vector 0 — decrypts
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

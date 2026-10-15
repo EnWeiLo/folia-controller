@@ -1,0 +1,5 @@
+starting
+window created
+shown: bounds={X=143,Y=535,Width=737,Height=137} frames=1 error=none
+bounds={X=143,Y=535,Width=737,Height=137} visible=True frames=662 error=none hiddenForFullscreen=False
+text=吹著前奏望著天空

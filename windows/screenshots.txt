@@ -1,0 +1,19 @@
+saved desktop.png
+saved desktop-settings.png
+tablet subtitle vs card: {"found":true,"subtitleBottomEdge":906,"cardTop":929,"inset":"294px"}
+audio feed: {"ready":true,"feeder":"function"}
+saved tablet.png
+sonnet cfg: {"subtitleContentMode":"translation","visualizerTunings":{"sonnet":{"cameraIntensity":1,"typographyMotion":1,"mgDensity":1,"showOnlyText":false,"showGuide":true
+saved sonnet-tuned.png
+saved tuning-panel.png
+fx-ink: {"path":"/fx.html","effect":"ink","lines":64,"title":"晴天"}
+saved fx-ink.png
+fx-dive: {"path":"/fx.html","effect":"dive","lines":64,"title":"晴天"}
+saved fx-dive.png
+fx-boom: {"path":"/fx.html","effect":"boom","lines":64,"title":"晴天"}
+saved fx-boom.png
+fx-fireworks: {"path":"/fx.html","effect":"fireworks","lines":64,"title":"晴天"}
+saved fx-fireworks.png
+fx-vinyl: {"path":"/fx.html","effect":"vinyl","lines":64,"title":"晴天"}
+saved fx-vinyl.png
+no page errors

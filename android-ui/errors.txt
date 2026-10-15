@@ -1,0 +1,5 @@
+--------- beginning of main
+10-15 02:49:46.791  3338  3367 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/tw.folia.controller/cache/WebView/Default/HTTP Cache/Code Cache/webui_js: No such file or directory (2)
+10-15 02:49:46.792  3338  3367 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+10-15 02:49:46.793  3338  3367 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/tw.folia.controller/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+10-15 02:49:46.793  3338  3367 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk

@@ -1,0 +1,52 @@
+to traditional: 故事的小黃花 從出生那年就飄著
+to simplified: 晴天 周杰伦 叶惠美
+japanese kept: 夜に駆ける 沈むように
+clean title: Hey Jude | 七里香
+primary artist: Jay Chou | Simon & Garfunkel
+
+assets: folia files=225 index=11063 launcher=2724 icon=23534
+listening on 39999
+player commands: toggle, seek:120000
+settings after test: offset=500
+
+== live lyric search (Windows) ==
+raw responses:
+  qq search: HTTP 200 {"code":0,"ts":1792032383916,"start_ts":1792032383909,"traceid":"2c65a59340d27110","request":{"code":2001,"data":{ "body": { "direct_group": { "extra_info": { "
+  amll ncm: HTTP 200 <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" xmlns:amll="http:
+晴天 / 周杰倫: 酷狗（逐字） [晴天 / 周杰伦] lines=64 translation=0 romaji=0
+    kugou: 1/1 accepted; top: 晴天 / 周杰伦 score=11
+    lrclib: 10/10 accepted; top: 晴天 / 周杰倫 score=11
+    netease: no results
+    qq: no results
+    kugou lyrics: lines=64 wordByWord=True translation=0 romaji=0
+告白氣球 / 周杰倫: 酷狗（逐字） [告白气球 / 周杰伦] lines=67 translation=0 romaji=0
+    kugou: 1/1 accepted; top: 告白气球 / 周杰伦 score=11
+    lrclib: 9/9 accepted; top: 告白氣球 / 周杰倫 score=11
+    netease: no results
+    qq: no results
+    kugou lyrics: lines=67 wordByWord=True translation=0 romaji=0
+夜に駆ける / YOASOBI: 酷狗（逐字） [夜に駆ける / YOASOBI] lines=88 translation=85 romaji=88
+    kugou: 1/1 accepted; top: 夜に駆ける / YOASOBI score=11
+    lrclib: 11/13 accepted; top: 夜に駆ける / YOASOBI score=11
+    netease: no results
+    qq: no results
+    kugou lyrics: lines=88 wordByWord=True translation=85 romaji=88
+Yoru ni Kakeru / YOASOBI: LRCLIB [Yoru Ni Kakeru / YOASOBI] lines=61 translation=0 romaji=0
+    lrclib: 10/19 accepted; top: Yoru Ni Kakeru / YOASOBI score=11
+    netease: no results
+    qq: no results
+    kugou: no results
+Lemon / 米津玄師: 酷狗（逐字） [Lemon / 米津玄師] lines=57 translation=54 romaji=0
+    kugou: 1/1 accepted; top: Lemon / 米津玄師 score=11
+    lrclib: 3/4 accepted; top: Lemon / 米津玄師 score=11
+    netease: no results
+    qq: no results
+    kugou lyrics: lines=57 wordByWord=True translation=54 romaji=0
+Blinding Lights / The Weeknd: 酷狗（逐字） [Blinding Lights / The Weeknd] lines=49 translation=35 romaji=0
+    lrclib: 14/15 accepted; top: Blinding Lights / The Weeknd score=11
+    kugou: 1/1 accepted; top: Blinding Lights / The Weeknd score=11
+    netease: no results
+    qq: no results
+    kugou lyrics: lines=49 wordByWord=True translation=35 romaji=0
+
+done

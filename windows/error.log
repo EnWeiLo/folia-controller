@@ -1,0 +1,5 @@
+[2026-10-15 02:49:58] error System.Runtime.InteropServices.COMException (0x80070490): Element not found. (0x80070490)
+   at System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(Int32 errorCode)
+   at NAudio.CoreAudioApi.MMDeviceEnumerator.GetDefaultAudioEndpoint(DataFlow dataFlow, Role role)
+   at FoliaController.AudioCapture.Open() in D:\a\folia-controller\folia-controller\windows\FoliaController.Windows\AudioCapture.cs:line 85
+

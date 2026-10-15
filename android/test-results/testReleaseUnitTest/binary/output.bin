@@ -1,0 +1,57 @@
+.== live lyric search (Android code on JVM) ==
+raw responses:
+�  qq search: HTTP 200 {"code":0,"ts":1792032287579,"start_ts":1792032287575,"traceid":"470f5a64139dbba9","request":{"code":2001,"data":{ "body": { "direct_group": { "extra_info": { "
+�  amll spotify: HTTP 200 <tt xmlns="http://www.w3.org/ns/ttml" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" xmlns:ttm="http://ww
+�  amll ncm: HTTP 200 <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" xmlns:amll="http:
+P晴天 / 周杰倫: LRCLIB [晴天 / 周杰倫] lines=53 translation=0 romaji=0
+=    lrclib: 10/10 accepted; top: 晴天 / 周杰倫 score=11
+    netease: no results
+    qq: no results
+    kugou: no results
+\告白氣球 / 周杰倫: LRCLIB [告白氣球 / 周杰倫] lines=35 translation=0 romaji=0
+A    lrclib: 9/9 accepted; top: 告白氣球 / 周杰倫 score=11
+    netease: no results
+    qq: no results
+    kugou: no results
+l夜に駆ける / YOASOBI: 酷狗（逐字） [夜に駆ける / YOASOBI] lines=88 translation=85 romaji=88
+A    kugou: 1/1 accepted; top: 夜に駆ける / YOASOBI score=11
+D    lrclib: 11/13 accepted; top: 夜に駆ける / YOASOBI score=11
+    netease: no results
+    qq: no results
+D    kugou lyrics: lines=88 wordByWord=true translation=85 romaji=88
+\Yoru ni Kakeru / YOASOBI: LRCLIB [Yoru Ni Kakeru / YOASOBI] lines=61 translation=0 romaji=0
+C    lrclib: 10/19 accepted; top: Yoru Ni Kakeru / YOASOBI score=11
+    netease: no results
+    qq: no results
+    kugou: no results
+aLemon / 米津玄師: 酷狗（逐字） [Lemon / 米津玄師] lines=57 translation=54 romaji=0
+<    kugou: 1/1 accepted; top: Lemon / 米津玄師 score=11
+=    lrclib: 3/4 accepted; top: Lemon / 米津玄師 score=11
+    netease: no results
+    qq: no results
+C    kugou lyrics: lines=57 wordByWord=true translation=54 romaji=0
+qBlinding Lights / The Weeknd: 酷狗（逐字） [Blinding Lights / The Weeknd] lines=49 translation=35 romaji=0
+G    lrclib: 14/15 accepted; top: Blinding Lights / The Weeknd score=11
+D    kugou: 1/1 accepted; top: Blinding Lights / The Weeknd score=11
+    netease: no results
+    qq: no results
+C    kugou lyrics: lines=49 wordByWord=true translation=35 romaji=0
+�Blinding Lights / The Weeknd (spotify 0VjIjW4GlUZAMYd2vXMi3b): AMLL（逐字） [Blinding Lights / The Weeknd] lines=37 translation=32 romaji=0
+G    lrclib: 14/15 accepted; top: Blinding Lights / The Weeknd score=11
+D    kugou: 1/1 accepted; top: Blinding Lights / The Weeknd score=11
+    netease: no results
+    qq: no results
+C    kugou lyrics: lines=49 wordByWord=true translation=35 romaji=0
+
+PASS amll.ttml — matches
+PASS apple.ttml — matches
+PASS english.lrc — matches
+PASS enhanced.lrc — matches
+PASS qingtian.qrc — matches
+PASS qingtian.yrc — matches
+PASS tadaima.krc — matches
+PASS yoru.yrc — matches
+PASS qrc vector 0 — decrypts
+PASS qrc vector 1 — decrypts
+PASS qrc vector 2 — decrypts
+PASS krc vector 0 — decrypts

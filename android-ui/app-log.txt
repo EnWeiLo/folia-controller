@@ -1,0 +1,8 @@
+10-15 02:51:02.123  3710  3710 I chromium: [INFO:CONSOLE(3)] "[fc-tuning] page 811x1801 dpr=2.625", source: https://appassets.androidplatform.net/assets/main-BJV9yTgY.js (3)
+10-15 02:51:02.524  3710  3710 I chromium: [INFO:CONSOLE(3)] "[LocalCoverAsset] Failed to initialize the local cover service worker TypeError: Failed to register a ServiceWorker for scope ('https://appassets.androidplatform.net/') with script ('https://appassets.androidplatform.net/folia-cover-sw.js'): An unknown error occurred when fetching the script.", source: https://appassets.androidplatform.net/assets/main-BJV9yTgY.js (3)
+10-15 02:51:19.689  3710  3710 I chromium: [INFO:CONSOLE(3)] "[fc-tuning] open 811x1801 u=1.9713174526008752 sheet=24,152 764x1498", source: https://appassets.androidplatform.net/assets/main-BJV9yTgY.js (3)
+10-15 02:51:20.076  3710  3710 I FoliaController: tuning panel open: true
+10-15 02:54:04.152  4646  4646 I chromium: [INFO:CONSOLE(3)] "[fc-tuning] page 1919x1137 dpr=2", source: https://appassets.androidplatform.net/assets/main-BJV9yTgY.js (3)
+10-15 02:54:04.508  4646  4646 I chromium: [INFO:CONSOLE(3)] "[LocalCoverAsset] Failed to initialize the local cover service worker TypeError: Failed to register a ServiceWorker for scope ('https://appassets.androidplatform.net/') with script ('https://appassets.androidplatform.net/folia-cover-sw.js'): An unknown error occurred when fetching the script.", source: https://appassets.androidplatform.net/assets/main-BJV9yTgY.js (3)
+10-15 02:54:22.289  4646  4646 I chromium: [INFO:CONSOLE(3)] "[fc-tuning] open 1919x1136 u=1.49921875 sheet=510,24 900x1089", source: https://appassets.androidplatform.net/assets/main-BJV9yTgY.js (3)
+10-15 02:54:22.484  4646  4646 I FoliaController: tuning panel open: true

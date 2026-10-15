@@ -1,0 +1,166 @@
+Performing Streamed Install
+Success
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1682
+WaitTime: 1683
+Complete
+saved phone-tutorial.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 900
+WaitTime: 901
+Complete
+saved phone-card.png
+saved phone-swipe.png
+saved phone-card-hidden.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 947
+WaitTime: 952
+Complete
+saved phone-settings.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 920
+WaitTime: 924
+Complete
+saved phone-settings-display.png
+saved phone-settings-display-mode.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 901
+WaitTime: 937
+Complete
+saved phone-settings-lyrics.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 925
+WaitTime: 929
+Complete
+saved phone-settings-other.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 976
+WaitTime: 980
+Complete
+saved phone-clock.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1096
+WaitTime: 1100
+Complete
+saved phone-ink.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1041
+WaitTime: 1180
+Complete
+saved phone-floating.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1014
+WaitTime: 1022
+Complete
+saved phone-about.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1395
+WaitTime: 1405
+Complete
+saved phone-tuning.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1035
+WaitTime: 1036
+Complete
+saved phone-fx-dive.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1201
+WaitTime: 1216
+Complete
+saved phone-fx-vinyl.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1279
+WaitTime: 1283
+Complete
+saved phone-fx-comic.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1063
+WaitTime: 1066
+Complete
+saved phone-fx-boom.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1125
+WaitTime: 1131
+Complete
+saved phone-fx-fireworks.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 1269
+WaitTime: 1272
+Complete
+saved tablet-card.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 947
+WaitTime: 951
+Complete
+saved tablet-tutorial.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 929
+WaitTime: 932
+Complete
+saved tablet-tuning.png
+Starting: Intent { cmp=tw.folia.controller/.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: tw.folia.controller/.MainActivity
+TotalTime: 920
+WaitTime: 921
+Complete
+saved tablet-fx-neon.png
+crash log lines: 0

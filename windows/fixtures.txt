@@ -1,0 +1,15 @@
+PASS  amll.ttml
+PASS  apple.ttml
+PASS  english.lrc
+PASS  enhanced.lrc
+PASS  qingtian.qrc
+PASS  qingtian.yrc
+PASS  tadaima.krc
+PASS  yoru.yrc
+PASS  qrc vector (512 hex)
+PASS  qrc vector (160 hex)
+PASS  qrc vector (48 hex)
+PASS  krc vector
+PASS  audio tone 1 kHz @ 44100: peak bin 45 = 255, bin 200 = 0
+PASS  audio tone 1 kHz @ 48000: peak bin 45 = 255, bin 200 = 0
+all fixtures match

@@ -1,0 +1,46 @@
+PASS  server answers
+PASS  launcher page at /
+PASS  Folia page has the control bar injected
+PASS  service worker registration removed
+PASS  Folia viewport tag removed
+PASS  Folia main script referenced  — /assets/main-BJV9yTgY.js
+PASS  Folia bundle served  — 200 text/javascript; charset=utf-8
+PASS  hashed assets cached
+PASS  Flowrics effect page with control bar
+PASS  /__fc/overlay.js
+PASS  /__fc/overlay.css
+PASS  /__fc/launcher.html
+PASS  /__fc/flowrics-engine.js
+PASS  /__fc/flowrics-fx.js
+PASS  /__fc/flowrics-fx-wild.js
+PASS  registerSW.js is 404
+PASS  unknown file is 404
+PASS  foreign Host header refused (DNS rebinding)
+PASS  cross-site WebSocket refused
+PASS  POST without X-FC refused
+PASS  snapshot events on connect  — Track,Lyric,PlayerProgress,PlayerPauseState,ControllerState
+PASS  Track event  — {"id":"-1199687383","title":"晴天","author":"周杰倫","album":"葉惠美","duration":269000,"cover":"/api/cover/6b7fa434f92a8b80aab0"}
+PASS  PlayerProgress event  — {"progress":219820}
+PASS  progress sent before pause state
+PASS  cover URL in Track  — /api/cover/6b7fa434f92a8b80aab0
+PASS  cover served  — 200 image/png
+lyric status: 歌詞：酷狗（逐字）
+PASS  album in control state  — "葉惠美"
+PASS  LAN address list in control state  — {"enabled":true,"urls":["http://192.168.0.2:39863/"]}
+PASS  cover in control state, addressed by its fingerprint  — "/api/cover/6b7fa434f92a8b80aab0"
+lyric event: {"source":"kugou","hasLyric":true,"tracks":["lrc","awlrc"],"lrcStart":"[00:01.707]周杰倫 - 晴天\n[00:02.667]作詞：周杰倫\n[00:03.327]作曲：周杰倫\n[00:29.269]故事的小黃花\n[00:32.660]從出生那年"}
+PASS  lyrics sent as a Folia container  — lrc,awlrc
+PASS  Chinese lyrics converted to Traditional
+PASS  toggle accepted
+PASS  pause reaches Folia  — PlayerProgress,PlayerPauseState,ControllerState
+PASS  pause reaches the control bar
+PASS  seek accepted
+PASS  seek reaches Folia  — {"progress":120000}
+PASS  settings accepted
+PASS  settings broadcast  — {"traditional":true,"offsetMs":500,"audioReactive":true}
+PASS  offset applied to Folia clock  — {"progress":119500}
+PASS  audio WebSocket opens
+PASS  audioReactive setting reported (on by default)  — {"traditional":true,"offsetMs":500,"audioReactive":true}
+PASS  resync re-sends snapshot
+
+all checks passed

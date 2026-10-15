@@ -1,0 +1,30 @@
+**********************
+PowerShell transcript start
+Start time: 20261015024939
+Username: runnervmfi6oq\runneradmin
+RunAs User: runnervmfi6oq\runneradmin
+Configuration Name: 
+Machine: runnervmfi6oq (Microsoft Windows NT 10.0.26100.0)
+Host Application: C:\Program Files\PowerShell\7\pwsh.dll -command . 'D:\a\_temp\154be92b-a56f-4ae9-b2d1-19756cf930a5.ps1'
+Process ID: 5200
+PSVersion: 7.6.6
+PSEdition: Core
+GitCommitId: 7.6.6
+OS: Microsoft Windows 10.0.26100
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+state: {"event":"ControllerState","data":{"hasSession":false,"app":"","title":"","artist":"","album":"","cover":null,"playing":false,"positionMs":0,"durationMs":0,"canSeek":false,"lyricStatus":"","settings":{"traditional":true,"offsetMs":0,"audioReactive":true},"lan":{"enabled":false,"urls":[]},"version":"1.0.45","host":"runnervmfi6oq","update":{"state":"idle","latest":"","available":false,"percent":0,"message":"","page":"","canInstall":true}}}
+---- error.log ----
+[2026-10-15 02:49:58] error System.Runtime.InteropServices.COMException (0x80070490): Element not found. (0x80070490)
+   at System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(Int32 errorCode)
+   at NAudio.CoreAudioApi.MMDeviceEnumerator.GetDefaultAudioEndpoint(DataFlow dataFlow, Role role)
+   at FoliaController.AudioCapture.Open() in D:\a\folia-controller\folia-controller\windows\FoliaController.Windows\AudioCapture.cs:line 85
+
+**********************
+PowerShell transcript end
+End time: 20261015025004
+**********************
